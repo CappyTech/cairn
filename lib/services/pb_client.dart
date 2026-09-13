@@ -15,21 +15,23 @@ const _urlKey = 'pb_server_url';
 /// - Android emulator reaches the host PC at 10.0.2.2.
 /// - A real phone must instead use the PC's LAN IP (set it in Settings).
 String platformDefaultUrl() {
+  // The production backend is the default. Override for local dev with
+  // `--dart-define=PB_URL=...` or the in-app Server settings.
+  const production = 'https://cairn.cappylabs.uk';
+
   if (kIsWeb) {
     final host = Uri.base.host;
-    // Local dev: the app is served on :5000 but the backend runs on :8090.
+    // Local web dev: the app is served on :5000, the backend on :8090.
     if (host.isEmpty || host == 'localhost' || host == '127.0.0.1') {
       return 'http://127.0.0.1:8090';
     }
-    // Served from a real domain (e.g. from PocketBase's pb_public behind
-    // Caddy): the API lives at the SAME origin — same scheme, host and port —
-    // so just reuse it (https://cairn.cappylabs.uk, no :8090).
+    // Served from a real domain (e.g. PocketBase's pb_public behind Caddy):
+    // the API is same-origin, so reuse it.
     return Uri.base.origin;
   }
-  if (defaultTargetPlatform == TargetPlatform.android) {
-    return 'http://10.0.2.2:8090';
-  }
-  return 'http://127.0.0.1:8090';
+
+  // Native (Android/iOS/desktop) ships pointed at production.
+  return production;
 }
 
 /// True when running as the local "admin/dev" view — the PC on localhost, or a
