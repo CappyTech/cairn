@@ -1,0 +1,19 @@
+# Cairn server — deployed on the EDGE box at /docker/cairn-server/.
+# CI updates it over SSH:  docker compose pull && docker compose up -d
+#
+# No public port is published: Caddy fronts it via the shared `edge` network
+# (block: cairn.cappylabs.uk -> reverse_proxy cairn-pocketbase:8090). That also
+# means the plain-HTTP backend is never exposed directly.
+services:
+  pocketbase:
+    image: ghcr.io/cappytech/cairn-server:latest
+    container_name: cairn-pocketbase
+    restart: unless-stopped
+    volumes:
+      - ./pb_data:/pb/pb_data      # the ONLY persistent state — back this up
+    networks:
+      - edge
+
+networks:
+  edge:
+    external: true                 # the same network hcs-caddy is on

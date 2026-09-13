@@ -1,0 +1,18 @@
+# The image only needs build/web + pb_migrations. Keep the build context small.
+.git/
+.dart_tool/
+android/
+ios/
+linux/
+macos/
+windows/
+web/
+lib/
+test/
+assets/
+backend/
+build/app/
+build/native_assets/
+*.iml
+*.apk
+*.aab
