@@ -15,6 +15,13 @@ import 'package:my_app/services/crypto_service.dart';
 /// never able to read the coordinates.
 void main() {
   const base = 'http://127.0.0.1:8090';
+  // Superuser credentials for the "server can't read ciphertext" check come
+  // from the environment — never hardcoded. Provide them when running locally:
+  //   flutter test --tags integration \
+  //     --dart-define=PB_ADMIN_EMAIL=you@example.com \
+  //     --dart-define=PB_ADMIN_PASSWORD=your-password
+  const adminEmail = String.fromEnvironment('PB_ADMIN_EMAIL');
+  const adminPassword = String.fromEnvironment('PB_ADMIN_PASSWORD');
   final algo = X25519();
   final stamp = DateTime.now().microsecondsSinceEpoch;
 
@@ -58,7 +65,7 @@ void main() {
     // --- the SERVER stores only ciphertext (no plaintext coords) ---
     final admin = PocketBase(base);
     await admin.collection('_superusers')
-        .authWithPassword('admin@local.test', 'Yviy8IBs1l4UbCDR');
+        .authWithPassword(adminEmail, adminPassword);
     final stored = await admin.collection('location_shares')
         .getFirstListItem('sender = "${aRec.id}" && recipient = "${bRec.id}"');
     expect(stored.getStringValue('ciphertext').contains('40.7128'), isFalse,
@@ -79,5 +86,9 @@ void main() {
     //     row (as sender); a third party would not. ---
     final aVisible = await pbA.collection('location_shares').getFullList();
     expect(aVisible.any((r) => r.getStringValue('recipient') == bRec.id), isTrue);
-  });
+  },
+      skip: (adminEmail.isEmpty || adminPassword.isEmpty)
+          ? 'Set PB_ADMIN_EMAIL and PB_ADMIN_PASSWORD (--dart-define) to run '
+              'this integration test against a live PocketBase.'
+          : false);
 }
