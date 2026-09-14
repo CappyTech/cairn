@@ -1,4 +1,8 @@
-﻿[
+﻿/// <reference path="../pb_data/types.d.ts" />
+// Encrypted display names: widen name fields to hold ciphertext. Re-imports
+// the current schema; idempotent on fresh and existing DBs.
+migrate((app) => {
+  const toImport = [
     {
         "id":  "_pb_users_auth_",
         "listRule":  "id = @request.auth.id",
@@ -599,4 +603,7 @@
         "updated":  "2026-09-14 01:32:47.957Z",
         "system":  false
     }
-]
+];
+  app.importCollections(toImport, false);
+}, (app) => {});
+

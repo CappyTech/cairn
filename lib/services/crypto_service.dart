@@ -175,4 +175,16 @@ class CryptoService {
 
   static String _normalise(String phrase) =>
       phrase.trim().toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+
+  // Text helpers for metadata (e.g. display names) so the server stores only
+  // ciphertext. "ForSelf" encrypts to this device's own key, so only I can read
+  // it back — used to keep my contacts' names private from the server.
+  static Future<String> sealTextFor(String recipientPubB64, String text) =>
+      sealFor(recipientPubB64, utf8.encode(text));
+
+  static Future<String> sealTextForSelf(String text) async =>
+      sealFor(await ensurePublicKey(), utf8.encode(text));
+
+  static Future<String> openSealedText(String blob) async =>
+      utf8.decode(await openSealed(blob));
 }

@@ -1,6 +1,7 @@
 import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
 import 'crypto_service.dart';
+import 'prefs.dart';
 
 /// "The device is the sign-in." No email/password screen — the app derives its
 /// identity from the on-device keypair and authenticates silently.
@@ -36,13 +37,31 @@ class AuthService {
           'passwordConfirm': id.password,
           'emailVisibility': false,
           'public_key': id.publicKey,
-          'name': 'New device',
+          // Name is stored encrypted-to-self — the server can't read it.
+          'name': await CryptoService.sealTextForSelf('New device'),
         });
         await pb.collection('users').authWithPassword(id.email, id.password);
+        await Prefs.setName('New device');
       } else {
         rethrow;
       }
     }
+  }
+
+  /// My display name — read from on-device storage; if absent (e.g. after a
+  /// restore), recover it from the encrypted-to-self copy on the server.
+  static Future<String> displayName() async {
+    final local = await Prefs.name();
+    if (local != null && local.isNotEmpty) return local;
+    final enc = pb.authStore.record?.getStringValue('name') ?? '';
+    if (enc.isNotEmpty) {
+      try {
+        final n = await CryptoService.openSealedText(enc);
+        await Prefs.setName(n);
+        return n;
+      } catch (_) {}
+    }
+    return 'New device';
   }
 
   /// Permanently delete this account. Removes the user record (which cascades
@@ -59,11 +78,13 @@ class AuthService {
     await CryptoService.wipeIdentity();
   }
 
-  /// Update the editable display name that contacts will see.
+  /// Update my display name. Stored plaintext on-device and encrypted-to-self on
+  /// the server (so the server never sees the readable name).
   static Future<void> setDisplayName(String name) async {
+    await Prefs.setName(name);
     final user = pb.authStore.record;
     if (user == null) return;
-    await pb.collection('users').update(user.id, body: {'name': name});
-    await pb.collection('users').authRefresh();
+    await pb.collection('users')
+        .update(user.id, body: {'name': await CryptoService.sealTextForSelf(name)});
   }
 }

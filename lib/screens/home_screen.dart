@@ -5,6 +5,7 @@ import '../services/pb_client.dart';
 import '../services/auth_service.dart';
 import '../services/pairing_service.dart';
 import '../services/background_share.dart';
+import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
@@ -22,9 +23,12 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   List<RecordModel> _contacts = [];
+  final Map<String, String> _names = {}; // contact id -> decrypted peer name
+  String _myName = 'New device';
   bool _loading = true;
   Future<void> Function()? _unsub;
   bool _bgEnabled = false;
+  bool _approxOnly = false;
 
   bool get _bgSupported =>
       !kIsWeb &&
@@ -40,8 +44,10 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> _init() async {
     if (_bgSupported) {
       _bgEnabled = await BackgroundShare.isEnabled();
-      if (mounted) setState(() {});
     }
+    _approxOnly = await Prefs.approxOnly();
+    _myName = await AuthService.displayName();
+    if (mounted) setState(() {});
     await _refresh();
     // Live: reciprocate the instant someone scans my code.
     _unsub = await pb.collection('pair_requests').subscribe('*', (e) async {
@@ -54,6 +60,12 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await PairingService.processPendingRequests();
       final contacts = await PairingService.myContacts();
+      // Decrypt each contact's name (stored encrypted-to-self on the server).
+      _names.clear();
+      for (final c in contacts) {
+        _names[c.id] =
+            await PairingService.decryptName(c.getStringValue('peer_name'));
+      }
       if (mounted) setState(() { _contacts = contacts; _loading = false; });
     } catch (_) {
       if (mounted) setState(() => _loading = false);
@@ -67,8 +79,7 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _editName() async {
-    final controller = TextEditingController(
-        text: AuthService.currentUser?.getStringValue('name') ?? '');
+    final controller = TextEditingController(text: _myName);
     final newName = await showDialog<String>(
       context: context,
       builder: (context) => AlertDialog(
@@ -92,6 +103,7 @@ class _HomeScreenState extends State<HomeScreen> {
     );
     if (newName != null && newName.isNotEmpty) {
       await AuthService.setDisplayName(newName);
+      _myName = newName;
       if (mounted) setState(() {});
     }
   }
@@ -160,29 +172,68 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  static String _precLabel(String p) => switch (p) {
+        'approximate' => 'Sharing approximate (~1 km)',
+        'off' => 'Sharing paused',
+        _ => 'Sharing precise',
+      };
+
   Widget _contactTile(RecordModel c) {
-    final name = c.getStringValue('peer_name').isEmpty
-        ? 'Unnamed device'
-        : c.getStringValue('peer_name');
+    final name = _names[c.id] ?? 'Unnamed device';
+    final prec = c.getStringValue('precision');
+    final paused = prec == 'off';
     return Card(
       child: ListTile(
         leading: CircleAvatar(child: Text(name[0].toUpperCase())),
         title: Text(name),
-        subtitle: const Text('Paired'),
+        subtitle: Text(
+          _approxOnly && !paused
+              ? 'Sharing approximate (global setting)'
+              : _precLabel(prec),
+          style: TextStyle(
+              fontSize: 12,
+              color: paused ? Theme.of(context).colorScheme.error : Brand.stone),
+        ),
         trailing: PopupMenuButton<String>(
           onSelected: (v) {
-            if (v == 'remove') _removeContact(c.getStringValue('peer'), name);
+            if (v == 'remove') {
+              _removeContact(c.getStringValue('peer'), name);
+            } else {
+              _setPrecision(c, v);
+            }
           },
-          itemBuilder: (context) => const [
-            PopupMenuItem(
+          itemBuilder: (context) => [
+            _precItem('precise', 'Precise', Icons.gps_fixed, prec),
+            _precItem('approximate', 'Approximate (~1 km)', Icons.blur_on, prec),
+            _precItem('off', 'Pause sharing', Icons.pause_circle_outline, prec),
+            const PopupMenuDivider(),
+            const PopupMenuItem(
                 value: 'remove',
                 child: ListTile(
-                    leading: Icon(Icons.person_remove),
-                    title: Text('Remove'))),
+                    leading: Icon(Icons.person_remove), title: Text('Remove'))),
           ],
         ),
       ),
     );
+  }
+
+  PopupMenuItem<String> _precItem(
+      String value, String label, IconData icon, String current) {
+    final selected = current == value || (value == 'precise' && current.isEmpty);
+    return PopupMenuItem(
+      value: value,
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        trailing: selected ? const Icon(Icons.check, size: 18) : null,
+      ),
+    );
+  }
+
+  Future<void> _setPrecision(RecordModel c, String precision) async {
+    await PairingService.setPrecision(
+        c.id, c.getStringValue('peer'), precision);
+    await _refresh();
   }
 
   Future<void> _removeContact(String peerId, String name) async {
@@ -238,7 +289,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final name = AuthService.currentUser?.getStringValue('name') ?? 'New device';
+    final name = _myName;
     return Scaffold(
       appBar: AppBar(
         title: Row(
@@ -354,6 +405,25 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ),
             ],
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: SwitchListTile(
+                value: _approxOnly,
+                onChanged: (v) async {
+                  await Prefs.setApproxOnly(v);
+                  if (mounted) setState(() => _approxOnly = v);
+                },
+                secondary: const Icon(Icons.blur_on),
+                title: const Text('Share approximate location only'),
+                subtitle: Text(
+                  _approxOnly
+                      ? 'On — everyone sees a rough area (~1 km), overriding per-contact settings.'
+                      : 'Off — precision is set per contact below.',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
             const SizedBox(height: 24),
             Text('People (${_contacts.length})',
                 style: Theme.of(context).textTheme.titleMedium),

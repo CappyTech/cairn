@@ -12,8 +12,11 @@ class AdminSnapshot {
   final List<RecordModel> pairs;
   AdminSnapshot(this.users, this.contacts, this.shares, this.pairs);
 
+  // Names are now stored encrypted, so the admin can't read them — show the
+  // pseudonymous id instead (short form).
   Map<String, String> get names => {
-        for (final u in users) u.id: u.getStringValue('name'),
+        for (final u in users)
+          u.id: u.id.length > 8 ? u.id.substring(0, 8) : u.id,
       };
 }
 

@@ -1,4 +1,8 @@
-﻿[
+﻿/// <reference path="../pb_data/types.d.ts" />
+// Adds per-contact `precision` (and keeps the full schema in sync). Re-imports
+// the current collections; safe/idempotent on both fresh and existing DBs.
+migrate((app) => {
+  const toImport = [
     {
         "id":  "_pb_users_auth_",
         "listRule":  "id = @request.auth.id",
@@ -94,7 +98,7 @@
                            "help":  "",
                            "hidden":  false,
                            "id":  "text1579384326",
-                           "max":  5000,
+                           "max":  255,
                            "min":  0,
                            "name":  "name",
                            "pattern":  "",
@@ -180,7 +184,7 @@
                         "CREATE UNIQUE INDEX `idx_email__pb_users_auth_` ON `users` (`email`) WHERE `email` != \u0027\u0027"
                     ],
         "created":  "2026-09-01 20:47:05.740Z",
-        "updated":  "2026-09-14 01:32:47.964Z",
+        "updated":  "2026-09-13 17:40:04.366Z",
         "system":  false,
         "authRule":  "",
         "manageRule":  null,
@@ -324,7 +328,7 @@
                            "help":  "",
                            "hidden":  false,
                            "id":  "text3571535660",
-                           "max":  5000,
+                           "max":  200,
                            "min":  0,
                            "name":  "peer_name",
                            "pattern":  "",
@@ -389,7 +393,7 @@
 
                     ],
         "created":  "2026-09-01 20:48:28.311Z",
-        "updated":  "2026-09-14 01:32:47.951Z",
+        "updated":  "2026-09-14 01:12:21.497Z",
         "system":  false
     },
     {
@@ -546,7 +550,7 @@
                            "help":  "",
                            "hidden":  false,
                            "id":  "text733324261",
-                           "max":  5000,
+                           "max":  200,
                            "min":  0,
                            "name":  "from_name",
                            "pattern":  "",
@@ -596,7 +600,10 @@
 
                     ],
         "created":  "2026-09-01 23:52:24.954Z",
-        "updated":  "2026-09-14 01:32:47.957Z",
+        "updated":  "2026-09-13 16:15:38.403Z",
         "system":  false
     }
-]
+];
+  app.importCollections(toImport, false);
+}, (app) => {});
+

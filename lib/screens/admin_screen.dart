@@ -259,7 +259,7 @@ class _AdminScreenState extends State<AdminScreen> {
     if (d.users.isEmpty) return _empty('No devices yet.');
     return ListView(
       children: d.users.map((u) {
-        final name = u.getStringValue('name');
+        final name = 'device ${u.id.length > 8 ? u.id.substring(0, 8) : u.id}';
         final (color, label) = _presence(u.getStringValue('last_seen'));
         final key = u.getStringValue('public_key');
         return ListTile(
@@ -289,9 +289,7 @@ class _AdminScreenState extends State<AdminScreen> {
     return ListView(
       children: d.contacts.map((c) {
         final owner = names[c.getStringValue('owner')] ?? c.getStringValue('owner');
-        final peer = c.getStringValue('peer_name').isNotEmpty
-            ? c.getStringValue('peer_name')
-            : (names[c.getStringValue('peer')] ?? c.getStringValue('peer'));
+        final peer = names[c.getStringValue('peer')] ?? c.getStringValue('peer');
         return ListTile(
           leading: const Icon(Icons.link),
           title: Text('$owner  →  $peer'),
@@ -347,9 +345,7 @@ class _AdminScreenState extends State<AdminScreen> {
       children: d.pairs.map((p) {
         final target =
             names[p.getStringValue('target')] ?? p.getStringValue('target');
-        final from = p.getStringValue('from_name').isNotEmpty
-            ? p.getStringValue('from_name')
-            : (names[p.getStringValue('from')] ?? p.getStringValue('from'));
+        final from = names[p.getStringValue('from')] ?? p.getStringValue('from');
         return ListTile(
           leading: const Icon(Icons.hourglass_bottom, color: Colors.orange),
           title: Text('$from  →  $target'),

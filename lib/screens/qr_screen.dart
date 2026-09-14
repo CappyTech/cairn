@@ -8,7 +8,6 @@ class QrScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final payload = PairingService.myQrPayload();
     return Scaffold(
       appBar: AppBar(title: const Text('My code')),
       body: Center(
@@ -24,10 +23,21 @@ class QrScreen extends StatelessWidget {
                 color: Colors.white,
                 borderRadius: BorderRadius.circular(16),
               ),
-              child: QrImageView(
-                data: payload,
-                size: 240,
-                backgroundColor: Colors.white,
+              child: FutureBuilder<String>(
+                future: PairingService.myQrPayload(),
+                builder: (context, snap) {
+                  if (!snap.hasData) {
+                    return const SizedBox(
+                        width: 240,
+                        height: 240,
+                        child: Center(child: CircularProgressIndicator()));
+                  }
+                  return QrImageView(
+                    data: snap.data!,
+                    size: 240,
+                    backgroundColor: Colors.white,
+                  );
+                },
               ),
             ),
             const SizedBox(height: 24),

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
 import 'auth_service.dart';
+import 'crypto_service.dart';
 
 /// QR pairing: connect to a select person by scanning their code.
 ///
@@ -9,15 +10,26 @@ import 'auth_service.dart';
 /// - Scanning someone creates your own `contacts` row and posts a
 ///   `pair_requests` row aimed at them, so their app can reciprocate.
 class PairingService {
-  /// The JSON string encoded into this device's QR code.
-  static String myQrPayload() {
+  /// The JSON string encoded into this device's QR code. The name travels in the
+  /// QR (scanned in person, never via the server) — plaintext here is fine.
+  static Future<String> myQrPayload() async {
     final u = AuthService.currentUser!;
     return jsonEncode({
       'v': 1,
       'id': u.id,
-      'n': u.getStringValue('name'),
+      'n': await AuthService.displayName(),
       'k': u.getStringValue('public_key'),
     });
+  }
+
+  /// Decrypt a stored (encrypted-to-self) contact name for display.
+  static Future<String> decryptName(String cipher) async {
+    if (cipher.isEmpty) return 'Unnamed device';
+    try {
+      return await CryptoService.openSealedText(cipher);
+    } catch (_) {
+      return 'Unnamed device';
+    }
   }
 
   /// Handle a scanned QR payload: create my side of the link and notify them.
@@ -44,10 +56,12 @@ class PairingService {
       peerName: theirName,
       peerKey: theirKey,
     );
+    // Send MY name to them encrypted to THEIR key — only they can read it.
+    final myName = await AuthService.displayName();
     await pb.collection('pair_requests').create(body: {
       'target': theirId,
       'from': me.id,
-      'from_name': me.getStringValue('name'),
+      'from_name': await CryptoService.sealTextFor(theirKey, myName),
       'from_pubkey': me.getStringValue('public_key'),
     });
     return theirName.isEmpty ? 'their device' : theirName;
@@ -59,10 +73,12 @@ class PairingService {
     final me = AuthService.currentUser!;
     final reqs = await pb.collection('pair_requests').getFullList();
     for (final r in reqs) {
+      // from_name is encrypted to me — decrypt, then store it encrypted-to-self.
+      final name = await decryptName(r.getStringValue('from_name'));
       await _ensureContact(
         ownerId: me.id,
         peerId: r.getStringValue('from'),
-        peerName: r.getStringValue('from_name'),
+        peerName: name,
         peerKey: r.getStringValue('from_pubkey'),
       );
       await pb.collection('pair_requests').delete(r.id);
@@ -74,7 +90,7 @@ class PairingService {
     final me = AuthService.currentUser!;
     return pb.collection('contacts').getFullList(
       filter: 'owner = "${me.id}"',
-      sort: 'peer_name',
+      sort: 'created', // peer_name is now ciphertext, so can't sort on it
     );
   }
 
@@ -105,14 +121,31 @@ class PairingService {
     final body = {
       'owner': ownerId,
       'peer': peerId,
-      'peer_name': peerName,
+      // Store the peer's name encrypted-to-self — only I can read it back.
+      'peer_name': await CryptoService.sealTextForSelf(peerName),
       'peer_pubkey': peerKey,
       'status': 'active',
     };
     if (existing.isNotEmpty) {
+      // Don't touch `precision` on update — keep the user's per-contact choice.
       await pb.collection('contacts').update(existing.first.id, body: body);
     } else {
-      await pb.collection('contacts').create(body: body);
+      await pb.collection('contacts').create(
+          body: {...body, 'precision': 'precise'});
+    }
+  }
+
+  /// Set how precisely I share with a contact: 'precise', 'approximate', or
+  /// 'off' (paused). Pausing also clears any location currently shared to them.
+  static Future<void> setPrecision(String contactId, String peerId,
+      String precision) async {
+    await pb.collection('contacts').update(contactId, body: {'precision': precision});
+    if (precision == 'off') {
+      final me = AuthService.currentUser!;
+      for (final s in await pb.collection('location_shares').getFullList(
+          filter: 'sender = "${me.id}" && recipient = "$peerId"')) {
+        await pb.collection('location_shares').delete(s.id);
+      }
     }
   }
 }
