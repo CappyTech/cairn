@@ -1,0 +1,34 @@
+Cairn is a private, self-hosted location-sharing app — a calmer, more private alternative to mainstream trackers. Share your live location with the few people you trust, and see theirs on a map. Your location is end-to-end encrypted, so it can only be read by the people you choose.
+
+WHY CAIRN
+
+• Private by design — your location and display name are end-to-end encrypted. The server relays them but cannot read them.
+• No account, no tracking — no email, phone number, or password. Your identity is a key generated on your device. No ads, no analytics, nothing sold.
+• You stay in control — pair with people by scanning a QR code, and decide exactly how precisely you share with each of them.
+
+FEATURES
+
+• End-to-end encrypted location — only your chosen contacts can decrypt where you are.
+• QR pairing — connect with someone by scanning their code in person. Only people you show your code to can pair with you.
+• Live map — see your people on an OpenStreetMap, updating as they move.
+• Per-contact precision — share your exact location with family, an approximate area (about 1 km) with others, or pause sharing entirely — per person.
+• Background sharing — keep sharing while the app is closed (optional).
+• Recovery phrase — back up your identity with a 24-word phrase so you never lose access.
+• Delete anytime — remove your account and all its data instantly, from within the app.
+
+SELF-HOSTED
+
+Cairn works out of the box, and you can also run your own server for complete control over your data. Either way, the design prevents the server operator from reading your location or your name.
+
+WHAT THE SERVER CANNOT SEE
+
+Your location and display name are end-to-end encrypted at all times. To deliver your encrypted updates, the server sees only pseudonymous identifiers and connection metadata — never your location or your name.
+
+GOOD TO KNOW
+
+• Sharing is always your choice — turn it on or off anytime.
+• Background sharing requires the "Allow all the time" location permission.
+• iOS is not available yet.
+
+Cairn — your location, for the few you trust.
+By CappyLabs.
