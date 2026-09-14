@@ -4,6 +4,20 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'crypto_service.dart';
 
+/// What to do with a contact link when we (re)learn a peer's public key.
+enum ContactKeyAction {
+  /// No link yet — create it (trust-on-first-use).
+  createNew,
+
+  /// Adopt the key and mark the contact healthy (unchanged key, or a key
+  /// re-confirmed in person).
+  refresh,
+
+  /// The key changed and we only heard it from the server — flag it for
+  /// in-person re-verification and keep the old, verified key.
+  keyChanged,
+}
+
 /// QR pairing: connect to a select person by scanning their code.
 ///
 /// - Your QR carries only YOUR public info (id, name, public key).
@@ -55,6 +69,7 @@ class PairingService {
       peerId: theirId,
       peerName: theirName,
       peerKey: theirKey,
+      trusted: true, // scanned in person → this key is authentic
     );
     // Send MY name to them encrypted to THEIR key — only they can read it.
     final myName = await AuthService.displayName();
@@ -80,6 +95,7 @@ class PairingService {
         peerId: r.getStringValue('from'),
         peerName: name,
         peerKey: r.getStringValue('from_pubkey'),
+        trusted: false, // relayed by the server → don't trust a changed key
       );
       await pb.collection('pair_requests').delete(r.id);
     }
@@ -109,29 +125,72 @@ class PairingService {
     }
   }
 
+  /// Decide what to do with a contact link when a peer's public key arrives.
+  ///
+  /// A key that only reached us over the server ([trusted] == false) must never
+  /// silently replace one we verified in person: a compromised server could
+  /// swap it to read our shares. So a *changed* key from that channel is flagged
+  /// ([ContactKeyAction.keyChanged]) rather than adopted. A key from an in-person
+  /// QR scan ([trusted] == true), an unchanged key, or trust-on-first-use are
+  /// all safe to adopt.
+  ///
+  /// Pure and side-effect-free so it can be unit-tested without a server.
+  static ContactKeyAction decideKeyAction({
+    required bool exists,
+    required String storedKey,
+    required String incomingKey,
+    required bool trusted,
+  }) {
+    if (!exists) return ContactKeyAction.createNew;
+    if (trusted || storedKey.isEmpty || storedKey == incomingKey) {
+      return ContactKeyAction.refresh;
+    }
+    return ContactKeyAction.keyChanged;
+  }
+
   static Future<void> _ensureContact({
     required String ownerId,
     required String peerId,
     required String peerName,
     required String peerKey,
+    required bool trusted,
   }) async {
     final existing = await pb.collection('contacts').getFullList(
       filter: 'owner = "$ownerId" && peer = "$peerId"',
     );
-    final body = {
-      'owner': ownerId,
-      'peer': peerId,
-      // Store the peer's name encrypted-to-self — only I can read it back.
-      'peer_name': await CryptoService.sealTextForSelf(peerName),
-      'peer_pubkey': peerKey,
-      'status': 'active',
-    };
-    if (existing.isNotEmpty) {
-      // Don't touch `precision` on update — keep the user's per-contact choice.
-      await pb.collection('contacts').update(existing.first.id, body: body);
-    } else {
-      await pb.collection('contacts').create(
-          body: {...body, 'precision': 'precise'});
+    final current = existing.isEmpty ? null : existing.first;
+    final action = decideKeyAction(
+      exists: current != null,
+      storedKey: current?.getStringValue('peer_pubkey') ?? '',
+      incomingKey: peerKey,
+      trusted: trusted,
+    );
+
+    switch (action) {
+      case ContactKeyAction.keyChanged:
+        // Keep the verified key untouched — only raise the flag so the UI can
+        // warn and prompt an in-person re-scan.
+        await pb.collection('contacts')
+            .update(current!.id, body: {'status': 'key_changed'});
+      case ContactKeyAction.refresh:
+        // Don't touch `precision` on update — keep the user's per-contact choice.
+        await pb.collection('contacts').update(current!.id, body: {
+          'owner': ownerId,
+          'peer': peerId,
+          // Store the peer's name encrypted-to-self — only I can read it back.
+          'peer_name': await CryptoService.sealTextForSelf(peerName),
+          'peer_pubkey': peerKey,
+          'status': 'active',
+        });
+      case ContactKeyAction.createNew:
+        await pb.collection('contacts').create(body: {
+          'owner': ownerId,
+          'peer': peerId,
+          'peer_name': await CryptoService.sealTextForSelf(peerName),
+          'peer_pubkey': peerKey,
+          'status': 'active',
+          'precision': 'precise',
+        });
     }
   }
 

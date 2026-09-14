@@ -28,7 +28,7 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 ### Known limits, stated plainly
 - **iOS is unbuilt**, and the background isolate is Android-only — `onIosBackground` is effectively a no-op, so there is no real iOS background sharing yet.
 - **Routing metadata is visible to the server**: public keys, who is paired with whom, and timestamps (`last_seen`). This is acknowledged in the README as a future goal.
-- **Reciprocal pairing trusts a server-relayed key.** The scanner reads the peer's real key from the QR in person; the *scanned* side takes `from_pubkey` from the `pair_requests` row it receives — a key it never verified in person.
+- **Reciprocal pairing trusts a server-relayed key.** The scanner reads the peer's real key from the QR in person; the *scanned* side takes `from_pubkey` from the `pair_requests` row it receives — a key it never verified in person. *(Partly mitigated: a **changed** key over that channel is now flagged rather than silently adopted — see Phase 1.)*
 - **No key rotation or revocation**: `peer_pubkey` is fixed at pairing; a compromised device key can't be rotated without re-pairing.
 - **Single device per identity**: two devices restored from the same phrase share one account and would both publish as the same sender.
 - **No automated test gate on PRs**: tests exist (`crypto`, `recovery`, `integration_share`) but `release.yml` doesn't run `flutter analyze` / `flutter test`.
@@ -40,12 +40,16 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 The things a privacy product cannot ship without.
 
 - **Close the reciprocal-pairing trust gap.** The scanned side currently trusts
-  `from_pubkey` from the server. Options: a two-way scan, a short verification
-  code (SAS) compared in person, or a key-fingerprint the QR carries so the
-  reciprocating side can cross-check. Until then, a malicious/compromised server
-  can MITM the un-scanned direction.
-- **Contact key-change detection.** Surface a warning when a paired contact's
-  public key changes (as Signal does), so a silent server-side swap is visible.
+  `from_pubkey` from the server. **Chosen direction: a QR-carried key
+  fingerprint** the reciprocating side cross-checks against the server-relayed
+  key (smallest UX change). Alternatives considered: a two-way scan, or a short
+  in-person verification code (SAS). Until this lands, a malicious/compromised
+  server can MITM the un-scanned direction on *first* pair.
+- ✅ **Contact key-change detection** *(done)*. A contact's public key arriving
+  changed over the server is flagged (`status = 'key_changed'`) instead of
+  silently adopted; the old verified key is kept, sharing to them is paused, and
+  the app prompts an in-person re-scan to confirm. This narrows the trust gap to
+  the *first* pairing (which the QR-fingerprint work above then closes).
 - **CI test gate.** Add a PR workflow running `flutter analyze` + `flutter test`
   (and ideally `dart format --set-exit-if-changed`) so regressions can't merge.
 - **Grow the test suite.** Cover pairing (`PairingService`), precision/pause

@@ -50,6 +50,11 @@ class LocationSharingService {
       final peerId = c.getStringValue('peer');
       final peerKey = c.getStringValue('peer_pubkey');
       if (peerId.isEmpty || peerKey.isEmpty) continue;
+
+      // Their key changed and hasn't been re-verified in person — don't publish
+      // to a key we no longer trust. Existing shares stay under the old key.
+      if (c.getStringValue('status') == 'key_changed') continue;
+
       final precision = c.getStringValue('precision');
 
       // Paused: stop sharing with them and clear any existing location.
