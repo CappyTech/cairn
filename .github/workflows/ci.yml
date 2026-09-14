@@ -19,4 +19,5 @@ jobs:
           cache: true
       - run: flutter pub get
       - run: flutter analyze
-      - run: flutter test
+      # Exclude integration tests — they require a live PocketBase server.
+      - run: flutter test --exclude-tags integration

@@ -119,7 +119,7 @@ class PairingService {
       'target': theirId,
       'from': me.id,
       'from_name': await CryptoService.sealTextFor(
-          theirKey, jsonEncode({'n': myName, if (mac != null) 'm': mac})),
+          theirKey, jsonEncode({'n': myName, 'm': ?mac})),
       'from_pubkey': myPubkey,
     });
     return theirName.isEmpty ? 'their device' : theirName;
