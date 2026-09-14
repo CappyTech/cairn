@@ -1,0 +1,10 @@
+Cairn v0.0.2 — private, self-hosted, end-to-end encrypted location sharing.
+
+New in 0.0.2:
+• Per-contact precision: share precise, approximate (~1 km), or paused
+• "Approximate only" global toggle
+• Display names are now end-to-end encrypted — the server can't read them
+
+Reminders: no-login device identity, 24-word recovery phrase, QR pairing, live map, background sharing.
+
+iOS not available yet. Feedback welcome.
