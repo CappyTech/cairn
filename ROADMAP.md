@@ -39,15 +39,16 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 
 The things a privacy product cannot ship without.
 
-- ✅ **Close the reciprocal-pairing trust gap** *(mostly done)*. The QR now
-  carries a secret **nonce**; whoever scans it attaches an HMAC (keyed by that
-  nonce) over their pairing request, binding their public key. The reciprocating
-  side recomputes it and **rejects a request whose key was tampered with** — so a
-  compromised server can no longer MITM the un-scanned direction. Carried inside
-  the already-encrypted `from_name`, so **no schema migration**. *Remaining:* a
-  request with **no** MAC (older app) is still accepted trust-on-first-use; once
-  clients have rolled over, require a valid MAC to fully close first-pair and
-  block injection (below).
+- ✅ **Close the reciprocal-pairing trust gap** *(done)*. The QR carries a
+  secret **nonce**; whoever scans it attaches an HMAC (keyed by that nonce) over
+  their pairing request, binding their public key. The reciprocating side
+  recomputes it: a request with a **tampered key is rejected**, and a request
+  with **no MAC can no longer create a new contact** — it may only update an
+  existing pairing (a changed key still flagged). So a compromised server can't
+  MITM the un-scanned direction *or* inject a first pairing. Carried inside the
+  already-encrypted `from_name`, so **no schema migration**. *Rollout note:* an
+  older client that sends no MAC can no longer complete a *first* pairing with an
+  updated device until it updates.
 - ✅ **Contact key-change detection** *(done)*. A contact's public key arriving
   changed over the server is flagged (`status = 'key_changed'`) instead of
   silently adopted; the old verified key is kept, sharing to them is paused, and
@@ -61,11 +62,12 @@ The things a privacy product cannot ship without.
   core screens.
 - **Abuse resistance on open endpoints.** `users.create` and `pair_requests`
   are open by design (no account gate). Add rate limiting / basic anti-spam at
-  the reverse proxy or via PocketBase hooks. **Unsolicited pairing:**
-  `processPendingRequests()` still adds a contact from an unsigned inbound
-  request (trust-on-first-use); requiring a valid pairing MAC (once rolled out)
-  closes this — an injected request can't produce one without having scanned
-  the target's QR.
+  the reverse proxy or via PocketBase hooks. **Unsolicited pairing is now
+  closed** at the app layer: `processPendingRequests()` only creates a contact
+  for a request carrying a valid proof-of-scan MAC, so an injected request can't
+  add itself without having scanned the target's QR. (A malicious client could
+  still *write* junk `pair_requests` rows — hence the rate-limiting item — but
+  they no longer become contacts.)
 
 ## Phase 2 — Platform reach
 

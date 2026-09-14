@@ -66,4 +66,34 @@ void main() {
       );
     });
   });
+
+  // An unsigned pairing request (no proof-of-scan MAC) must never create a new
+  // contact — otherwise anyone could inject themselves, and a server could swap
+  // a key on first pair. It may still update an existing pairing.
+  group('PairingService.applyCreatePolicy', () {
+    test('unsigned request for an unknown contact is dropped', () {
+      expect(
+        PairingService.applyCreatePolicy(ContactKeyAction.createNew, false),
+        isNull,
+      );
+    });
+
+    test('a signed/in-person request may create a new contact', () {
+      expect(
+        PairingService.applyCreatePolicy(ContactKeyAction.createNew, true),
+        ContactKeyAction.createNew,
+      );
+    });
+
+    test('updates to existing contacts pass through regardless', () {
+      expect(
+        PairingService.applyCreatePolicy(ContactKeyAction.refresh, false),
+        ContactKeyAction.refresh,
+      );
+      expect(
+        PairingService.applyCreatePolicy(ContactKeyAction.keyChanged, false),
+        ContactKeyAction.keyChanged,
+      );
+    });
+  });
 }

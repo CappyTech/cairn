@@ -24,8 +24,10 @@ enum InboundPairDecision {
   /// tamper with their key. Reciprocate and trust the key.
   trusted,
 
-  /// No MAC at all (an older app, or a QR without a nonce). Reciprocate under
-  /// the usual trust-on-first-use rules, but a changed key is still flagged.
+  /// No MAC at all (an older app, or a QR without a nonce). May only UPDATE an
+  /// existing pairing — never create a new contact (that would let anyone
+  /// inject themselves, or a server swap a key on first pair). A changed key on
+  /// an existing contact is still flagged for in-person re-verification.
   unverified,
 
   /// A MAC that's present but wrong — the key was tampered with in transit, or
@@ -173,7 +175,11 @@ class PairingService {
             peerId: fromId,
             peerName: decoded.name,
             peerKey: fromPubkey,
-            trusted: false, // no proof → TOFU, and flag a changed key
+            trusted: false,
+            // No proof of scan: may only UPDATE an existing pairing, never
+            // create a new contact (blocks self-injection and first-pair key
+            // swaps). A changed key on an existing contact is still flagged.
+            createIfMissing: false,
           );
         case InboundPairDecision.reject:
           // MAC present but wrong: tampered or forged. Drop it, add nothing.
@@ -257,23 +263,40 @@ class PairingService {
     return ContactKeyAction.keyChanged;
   }
 
+  /// Gate [decideKeyAction] by whether we're allowed to create a *new* contact.
+  /// An unsigned pairing request (no proof-of-scan MAC) passes
+  /// [createIfMissing] == false, so a would-be new contact becomes `null`
+  /// (dropped) — that's what stops anyone from injecting themselves into your
+  /// list, and stops a first-pair key swap. Existing contacts are unaffected.
+  /// Pure, so it's unit-tested.
+  static ContactKeyAction? applyCreatePolicy(
+      ContactKeyAction action, bool createIfMissing) {
+    if (action == ContactKeyAction.createNew && !createIfMissing) return null;
+    return action;
+  }
+
   static Future<void> _ensureContact({
     required String ownerId,
     required String peerId,
     required String peerName,
     required String peerKey,
     required bool trusted,
+    bool createIfMissing = true,
   }) async {
     final existing = await pb.collection('contacts').getFullList(
       filter: 'owner = "$ownerId" && peer = "$peerId"',
     );
     final current = existing.isEmpty ? null : existing.first;
-    final action = decideKeyAction(
-      exists: current != null,
-      storedKey: current?.getStringValue('peer_pubkey') ?? '',
-      incomingKey: peerKey,
-      trusted: trusted,
+    final action = applyCreatePolicy(
+      decideKeyAction(
+        exists: current != null,
+        storedKey: current?.getStringValue('peer_pubkey') ?? '',
+        incomingKey: peerKey,
+        trusted: trusted,
+      ),
+      createIfMissing,
     );
+    if (action == null) return; // unsigned request for an unknown contact: drop
 
     switch (action) {
       case ContactKeyAction.keyChanged:
