@@ -28,7 +28,7 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 ### Known limits, stated plainly
 - **iOS is unbuilt**, and the background isolate is Android-only — `onIosBackground` is effectively a no-op, so there is no real iOS background sharing yet.
 - **Routing metadata is visible to the server**: public keys, who is paired with whom, and timestamps (`last_seen`). This is acknowledged in the README as a future goal.
-- **Reciprocal pairing trusts a server-relayed key.** The scanner reads the peer's real key from the QR in person; the *scanned* side takes `from_pubkey` from the `pair_requests` row it receives — a key it never verified in person. *(Partly mitigated: a **changed** key over that channel is now flagged rather than silently adopted — see Phase 1.)*
+- **Reciprocal pairing trusts a server-relayed key.** The scanner reads the peer's real key from the QR in person; the *scanned* side takes `from_pubkey` from the `pair_requests` row it receives — a key it never verified in person. *(Now mitigated: a request signed with the QR nonce is verified and a tampered key is rejected; a changed key is flagged. Remaining gap: unsigned (older-app) requests are still trust-on-first-use — see Phase 1.)*
 - **No key rotation or revocation**: `peer_pubkey` is fixed at pairing; a compromised device key can't be rotated without re-pairing.
 - **Single device per identity**: two devices restored from the same phrase share one account and would both publish as the same sender.
 - **No automated test gate on PRs**: tests exist (`crypto`, `recovery`, `integration_share`) but `release.yml` doesn't run `flutter analyze` / `flutter test`.
@@ -39,26 +39,33 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 
 The things a privacy product cannot ship without.
 
-- **Close the reciprocal-pairing trust gap.** The scanned side currently trusts
-  `from_pubkey` from the server. **Chosen direction: a QR-carried key
-  fingerprint** the reciprocating side cross-checks against the server-relayed
-  key (smallest UX change). Alternatives considered: a two-way scan, or a short
-  in-person verification code (SAS). Until this lands, a malicious/compromised
-  server can MITM the un-scanned direction on *first* pair.
+- ✅ **Close the reciprocal-pairing trust gap** *(mostly done)*. The QR now
+  carries a secret **nonce**; whoever scans it attaches an HMAC (keyed by that
+  nonce) over their pairing request, binding their public key. The reciprocating
+  side recomputes it and **rejects a request whose key was tampered with** — so a
+  compromised server can no longer MITM the un-scanned direction. Carried inside
+  the already-encrypted `from_name`, so **no schema migration**. *Remaining:* a
+  request with **no** MAC (older app) is still accepted trust-on-first-use; once
+  clients have rolled over, require a valid MAC to fully close first-pair and
+  block injection (below).
 - ✅ **Contact key-change detection** *(done)*. A contact's public key arriving
   changed over the server is flagged (`status = 'key_changed'`) instead of
   silently adopted; the old verified key is kept, sharing to them is paused, and
-  the app prompts an in-person re-scan to confirm. This narrows the trust gap to
-  the *first* pairing (which the QR-fingerprint work above then closes).
-- **CI test gate.** Add a PR workflow running `flutter analyze` + `flutter test`
-  (and ideally `dart format --set-exit-if-changed`) so regressions can't merge.
-- **Grow the test suite.** Cover pairing (`PairingService`), precision/pause
-  behaviour, and the subscribe/ingest path in `LocationSharingService`; add
-  widget tests for the core screens.
+  the app prompts an in-person re-scan to confirm.
+- ✅ **CI test gate** *(done)*. `ci.yml` runs `flutter analyze` + `flutter test`
+  on every PR and non-`main` branch. *(Optional next: add a
+  `dart format --set-exit-if-changed` check.)*
+- **Grow the test suite.** Pairing decision + MAC verification and key-change
+  detection are now covered; still want precision/pause behaviour, the
+  subscribe/ingest path in `LocationSharingService`, and widget tests for the
+  core screens.
 - **Abuse resistance on open endpoints.** `users.create` and `pair_requests`
   are open by design (no account gate). Add rate limiting / basic anti-spam at
-  the reverse proxy or via PocketBase hooks so account and pair-request
-  creation can't be flooded.
+  the reverse proxy or via PocketBase hooks. **Unsolicited pairing:**
+  `processPendingRequests()` still adds a contact from an unsigned inbound
+  request (trust-on-first-use); requiring a valid pairing MAC (once rolled out)
+  closes this — an injected request can't produce one without having scanned
+  the target's QR.
 
 ## Phase 2 — Platform reach
 

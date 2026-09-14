@@ -18,6 +18,21 @@ enum ContactKeyAction {
   keyChanged,
 }
 
+/// What to do with an incoming pairing request, based on its proof-of-scan MAC.
+enum InboundPairDecision {
+  /// A valid MAC — the sender scanned our QR in person and the server didn't
+  /// tamper with their key. Reciprocate and trust the key.
+  trusted,
+
+  /// No MAC at all (an older app, or a QR without a nonce). Reciprocate under
+  /// the usual trust-on-first-use rules, but a changed key is still flagged.
+  unverified,
+
+  /// A MAC that's present but wrong — the key was tampered with in transit, or
+  /// the request is forged. Drop it; create nothing.
+  reject,
+}
+
 /// QR pairing: connect to a select person by scanning their code.
 ///
 /// - Your QR carries only YOUR public info (id, name, public key).
@@ -29,12 +44,24 @@ class PairingService {
   static Future<String> myQrPayload() async {
     final u = AuthService.currentUser!;
     return jsonEncode({
-      'v': 1,
+      'v': 2,
       'id': u.id,
       'n': await AuthService.displayName(),
       'k': u.getStringValue('public_key'),
+      // Secret nonce: lets whoever scans this prove (via a MAC on their pairing
+      // request) that they scanned us in person and that our key wasn't swapped.
+      's': await CryptoService.pairingNonce(),
     });
   }
+
+  /// The message a pairing MAC is computed over. Binds the request's sender,
+  /// target, and the sender's public key, so none can be swapped undetected.
+  static String pairMacMessage({
+    required String fromId,
+    required String targetId,
+    required String fromPubkey,
+  }) =>
+      '$fromId|$targetId|$fromPubkey';
 
   /// Decrypt a stored (encrypted-to-self) contact name for display.
   static Future<String> decryptName(String cipher) async {
@@ -59,6 +86,7 @@ class PairingService {
     final theirId = data['id'] as String?;
     final theirName = (data['n'] ?? '') as String;
     final theirKey = data['k'] as String?;
+    final theirNonce = data['s'] as String?;
     if (theirId == null || theirKey == null) {
       throw 'That QR code is not a valid invite.';
     }
@@ -71,34 +99,115 @@ class PairingService {
       peerKey: theirKey,
       trusted: true, // scanned in person → this key is authentic
     );
-    // Send MY name to them encrypted to THEIR key — only they can read it.
+
+    // Prove to them that I really scanned their QR (and that my key below
+    // reached them untouched): MAC keyed by the nonce from their QR. Only
+    // possible when their QR carried one (v2+).
+    final myPubkey = me.getStringValue('public_key');
+    String? mac;
+    if (theirNonce != null && theirNonce.isNotEmpty) {
+      mac = await CryptoService.hmacBase64(
+        base64Decode(theirNonce),
+        pairMacMessage(fromId: me.id, targetId: theirId, fromPubkey: myPubkey),
+      );
+    }
+
+    // Send MY name (and the proof MAC) to them encrypted to THEIR key — only
+    // they can read it.
     final myName = await AuthService.displayName();
     await pb.collection('pair_requests').create(body: {
       'target': theirId,
       'from': me.id,
-      'from_name': await CryptoService.sealTextFor(theirKey, myName),
-      'from_pubkey': me.getStringValue('public_key'),
+      'from_name': await CryptoService.sealTextFor(
+          theirKey, jsonEncode({'n': myName, if (mac != null) 'm': mac})),
+      'from_pubkey': myPubkey,
     });
     return theirName.isEmpty ? 'their device' : theirName;
+  }
+
+  /// Classify an incoming pairing request from whether it carried a MAC and
+  /// whether that MAC verified. Pure, so it can be unit-tested without a server.
+  static InboundPairDecision classifyInbound({
+    required bool macPresent,
+    required bool macValid,
+  }) {
+    if (!macPresent) return InboundPairDecision.unverified;
+    return macValid ? InboundPairDecision.trusted : InboundPairDecision.reject;
   }
 
   /// Someone scanned MY code → create the mirror contact and clear the request.
   /// Call on app open and whenever a realtime request arrives.
   static Future<void> processPendingRequests() async {
     final me = AuthService.currentUser!;
+    final myNonce = await CryptoService.pairingNonce();
     final reqs = await pb.collection('pair_requests').getFullList();
     for (final r in reqs) {
-      // from_name is encrypted to me — decrypt, then store it encrypted-to-self.
-      final name = await decryptName(r.getStringValue('from_name'));
-      await _ensureContact(
-        ownerId: me.id,
-        peerId: r.getStringValue('from'),
-        peerName: name,
-        peerKey: r.getStringValue('from_pubkey'),
-        trusted: false, // relayed by the server → don't trust a changed key
-      );
+      final fromId = r.getStringValue('from');
+      final fromPubkey = r.getStringValue('from_pubkey');
+      // from_name is encrypted to me — decrypt to get their name and proof MAC.
+      final decoded = await _decodeFromName(r.getStringValue('from_name'));
+
+      final macPresent = decoded.mac != null && decoded.mac!.isNotEmpty;
+      var macValid = false;
+      if (macPresent) {
+        final expected = await CryptoService.hmacBase64(
+          base64Decode(myNonce),
+          pairMacMessage(
+              fromId: fromId, targetId: me.id, fromPubkey: fromPubkey),
+        );
+        macValid = CryptoService.macEquals(decoded.mac!, expected);
+      }
+
+      switch (classifyInbound(macPresent: macPresent, macValid: macValid)) {
+        case InboundPairDecision.trusted:
+          await _ensureContact(
+            ownerId: me.id,
+            peerId: fromId,
+            peerName: decoded.name,
+            peerKey: fromPubkey,
+            trusted: true, // MAC verified → key is authentic
+          );
+        case InboundPairDecision.unverified:
+          await _ensureContact(
+            ownerId: me.id,
+            peerId: fromId,
+            peerName: decoded.name,
+            peerKey: fromPubkey,
+            trusted: false, // no proof → TOFU, and flag a changed key
+          );
+        case InboundPairDecision.reject:
+          // MAC present but wrong: tampered or forged. Drop it, add nothing.
+          break;
+      }
       await pb.collection('pair_requests').delete(r.id);
     }
+  }
+
+  /// Decrypt a pairing request's `from_name`, returning the sender's display
+  /// name and (for v2+ requests) the proof MAC. Handles the legacy format
+  /// where `from_name` was just the encrypted name.
+  static Future<({String name, String? mac})> _decodeFromName(
+      String blob) async {
+    if (blob.isEmpty) return (name: 'Unnamed device', mac: null);
+    final String clear;
+    try {
+      clear = await CryptoService.openSealedText(blob);
+    } catch (_) {
+      return (name: 'Unnamed device', mac: null); // undecryptable
+    }
+    try {
+      final obj = jsonDecode(clear);
+      if (obj is Map<String, dynamic>) {
+        final n = obj['n'] as String?;
+        return (
+          name: (n != null && n.isNotEmpty) ? n : 'Unnamed device',
+          mac: obj['m'] as String?,
+        );
+      }
+    } catch (_) {
+      // Not JSON → legacy plain-name format; fall through.
+    }
+    return (name: clear.isNotEmpty ? clear : 'Unnamed device', mac: null);
   }
 
   /// This device's own contacts (owner = me), i.e. the people I've paired with.
