@@ -259,22 +259,92 @@ class _HomeScreenState extends State<HomeScreen> {
     await _refresh();
   }
 
+  /// Google Play requires a prominent in-app disclosure BEFORE the runtime
+  /// background-location prompt, explaining that we collect location in the
+  /// background and what for. Returns true if the user consents to continue.
+  Future<bool> _backgroundDisclosure() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.my_location),
+        title: const Text('Share your location in the background'),
+        content: const Text(
+          'Cairn collects location data to share your location with the '
+          'contacts you have paired with, even when the app is closed or not '
+          'in use.\n\n'
+          'A permanent notification will show while this is on, and you can '
+          'turn it off at any time. Your location stays end-to-end encrypted — '
+          'only your chosen contacts can read it.\n\n'
+          'To enable this, Android will next ask you to allow location '
+          '"all the time".',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Allow')),
+        ],
+      ),
+    );
+    return ok == true;
+  }
+
+  /// Second-step guidance: on Android 11+ "Allow all the time" can only be set
+  /// in system settings, so send the user there with clear instructions.
+  Future<void> _openAllTheTimeSettings() async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.tune),
+        title: const Text('One more step'),
+        content: const Text(
+          'To share while the app is closed, Android needs location set to '
+          '"Allow all the time".\n\n'
+          'On the next screen, open Permissions → Location and choose '
+          '"Allow all the time", then come back and switch this on.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Open settings')),
+        ],
+      ),
+    );
+    if (go == true) await BackgroundShare.openAppLocationSettings();
+  }
+
   Future<void> _toggleBg(bool on) async {
     if (on) {
-      final ok = await BackgroundShare.enable();
-      if (!ok) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-              content: Text(
-                  'Set location to "Allow all the time" in system settings to '
-                  'share in the background.')));
-        }
+      // Prominent disclosure must come before requesting the permission.
+      if (!await _backgroundDisclosure()) {
+        if (mounted) setState(() => _bgEnabled = false);
         return;
+      }
+      final res = await BackgroundShare.enable();
+      if (!mounted) return;
+      switch (res) {
+        case BgEnableResult.enabled:
+          setState(() => _bgEnabled = true);
+          return;
+        case BgEnableResult.needsAllTheTime:
+          setState(() => _bgEnabled = false);
+          await _openAllTheTimeSettings();
+          return;
+        case BgEnableResult.denied:
+          setState(() => _bgEnabled = false);
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+              content: Text('Location permission is needed to share.')));
+          return;
       }
     } else {
       await BackgroundShare.disable();
+      if (mounted) setState(() => _bgEnabled = false);
     }
-    if (mounted) setState(() => _bgEnabled = on);
   }
 
   Future<void> _openScan() async {

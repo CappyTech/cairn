@@ -67,7 +67,7 @@ class _MapScreenState extends State<MapScreen> {
     _lastPos = p;
     final here = LatLng(p.latitude, p.longitude);
     if (mounted) setState(() => _me = here);
-    if (recenter) _map.move(here, 16);
+    if (recenter) _map.move(here, 14);
     _publish(p);
   }
 
@@ -148,7 +148,7 @@ class _MapScreenState extends State<MapScreen> {
             mapController: _map,
             options: MapOptions(
               initialCenter: _me ?? _fallback,
-              initialZoom: _me == null ? 3 : 16,
+              initialZoom: _me == null ? 3 : 14,
             ),
             children: [
               TileLayer(
@@ -205,7 +205,7 @@ class _MapScreenState extends State<MapScreen> {
           ? null
           : FloatingActionButton(
               tooltip: 'Centre on me',
-              onPressed: () => _map.move(_me!, 16),
+              onPressed: () => _map.move(_me!, 15),
               child: const Icon(Icons.my_location),
             ),
     );

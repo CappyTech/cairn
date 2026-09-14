@@ -22,9 +22,21 @@ class LocationService {
 
   static Future<Position> current() async {
     await ensureReady();
-    return Geolocator.getCurrentPosition(
-      locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
-    );
+    // Bound the wait: high-accuracy can block indefinitely when there's no
+    // fresh fix (e.g. indoors, or a cold emulator), which risks an ANR. Fall
+    // back to the last known fix so the map still opens promptly.
+    try {
+      return await Geolocator.getCurrentPosition(
+        locationSettings: const LocationSettings(
+          accuracy: LocationAccuracy.high,
+          timeLimit: Duration(seconds: 8),
+        ),
+      );
+    } catch (_) {
+      final last = await Geolocator.getLastKnownPosition();
+      if (last != null) return last;
+      rethrow;
+    }
   }
 
   /// A live stream of positions (updates as you move ~10m).

@@ -9,6 +9,19 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'location_sharing_service.dart';
 
+/// Outcome of trying to turn on background sharing.
+enum BgEnableResult {
+  /// Background permission was already granted; the service is running.
+  enabled,
+
+  /// Foreground location is granted but "Allow all the time" is not — the user
+  /// must enable it in system settings (Android 11+).
+  needsAllTheTime,
+
+  /// Location permission was denied.
+  denied,
+}
+
 const _channelId = 'cairn_location';
 const _notifId = 8888;
 const _enabledKey = 'bg_share_enabled';
@@ -59,31 +72,50 @@ class BackgroundShare {
   static Future<bool> isEnabled() async =>
       (await _storage.read(key: _enabledKey)) == '1';
 
-  /// Ask for the "Allow all the time" location permission needed for background.
-  /// Returns true if background sharing is usable.
-  static Future<bool> _ensureAlwaysPermission() async {
+  /// Open the app's system settings page (Permissions → Location) so the user
+  /// can pick "Allow all the time" — the only way to grant background location
+  /// on Android 11+.
+  static Future<void> openAppLocationSettings() => Geolocator.openAppSettings();
+
+  /// Try to start background sharing.
+  ///
+  /// Requires the "Allow all the time" (background) location permission. On
+  /// Android 11+ that can't be granted from an in-app dialog — the user must
+  /// enable it in system settings — so this reports [BgEnableResult.needsAllTheTime]
+  /// once foreground location is granted, letting the UI walk them there.
+  static Future<BgEnableResult> enable() async {
     var perm = await Geolocator.checkPermission();
     if (perm == LocationPermission.denied) {
+      // Foreground runtime prompt ("While using the app").
       perm = await Geolocator.requestPermission();
     }
-    if (perm == LocationPermission.deniedForever ||
-        perm == LocationPermission.denied) {
-      return false;
+    if (perm == LocationPermission.denied ||
+        perm == LocationPermission.deniedForever) {
+      return BgEnableResult.denied;
     }
-    // whileInUse -> request again nudges toward "always" (Android shows the
-    // upgrade prompt; if not granted the user can set it in system settings).
-    if (perm == LocationPermission.whileInUse) {
-      perm = await Geolocator.requestPermission();
+    if (perm != LocationPermission.always) {
+      // Foreground granted, but background ("all the time") is not — needs the
+      // system-settings step.
+      return BgEnableResult.needsAllTheTime;
     }
-    return perm == LocationPermission.always ||
-        perm == LocationPermission.whileInUse;
-  }
-
-  static Future<bool> enable() async {
-    if (!await _ensureAlwaysPermission()) return false;
+    // The foreground service shows a permanent notification; on Android 13+ that
+    // needs the POST_NOTIFICATIONS runtime permission or the notification (and
+    // the user's only signal that sharing is on) is silently hidden.
+    await _ensureNotificationPermission();
     await _storage.write(key: _enabledKey, value: '1');
     if (!await _service.isRunning()) await _service.startService();
-    return true;
+    return BgEnableResult.enabled;
+  }
+
+  static Future<void> _ensureNotificationPermission() async {
+    try {
+      final android = FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (await android?.areNotificationsEnabled() == false) {
+        await android?.requestNotificationsPermission();
+      }
+    } catch (_) {/* older Android / plugin no-op — notification still posts */}
   }
 
   static Future<void> disable() async {

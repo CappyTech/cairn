@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # Local/dev default. CI overrides this from the git tag (versionName) and the
 # Actions run number (versionCode) — see .github/workflows/release.yml.
-version: 0.0.2+2
+version: 0.0.4+4
 
 environment:
   sdk: ^3.11.4
