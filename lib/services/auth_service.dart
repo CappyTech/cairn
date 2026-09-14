@@ -1,6 +1,7 @@
 import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
 import 'crypto_service.dart';
+import 'invite_service.dart';
 import 'prefs.dart';
 
 /// "The device is the sign-in." No email/password screen — the app derives its
@@ -76,6 +77,7 @@ class AuthService {
     }
     pb.authStore.clear();
     await CryptoService.wipeIdentity();
+    await InviteService.clear();
   }
 
   /// Update my display name. Stored plaintext on-device and encrypted-to-self on

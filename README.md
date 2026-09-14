@@ -24,7 +24,7 @@ see theirs on a map. Your location — and even your display name — are
 ## Features
 
 - 🔒 **End-to-end encrypted location** — only your chosen contacts can decrypt it.
-- 📷 **QR pairing** — connect in person; only people you show your code to can pair.
+- 📷 **QR pairing** — connect in person; only people you show your code to can pair. Not nearby? Send a **one-time invite code** (copy/paste or share) that expires in 24 hours.
 - 🗺️ **Live map** on OpenStreetMap.
 - 🎯 **Per-contact precision** — precise, approximate (~1 km), or paused, per person; plus a global "approximate only" switch.
 - 🌙 **Background sharing** (optional) — keeps sharing while the app is closed.

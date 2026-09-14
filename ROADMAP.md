@@ -111,6 +111,13 @@ Delivering on the README's stated future goal.
 
 ## Phase 5 — Product polish
 
+- ✅ **Remote pairing invites** *(done)*. For contacts who aren't nearby, "My
+  code" can copy/share a **one-time, 24h-expiring** invite (recipient uses
+  Scan → "Paste instead"). It carries a fresh single-use secret — not the
+  permanent QR nonce — so an intercepted invite pairs at most once and then
+  dies, unlike a leaked permanent code. *Note:* remote pairing trusts the
+  channel you send it over for the peer's key authenticity; in-person QR
+  remains the strongest option.
 - **Efficient publish path.** `publish()` does per-contact `getFullList` +
   update/create — O(N) round trips per tick. Batch the reads and consider a
   single upsert call per contact.

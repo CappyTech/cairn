@@ -53,13 +53,17 @@ class CryptoService {
   // one direction of pairing not verified face to face.
   // ---------------------------------------------------------------------------
 
+  /// A fresh cryptographically-random token, base64-encoded ([len] bytes).
+  static String randomTokenB64([int len = 32]) {
+    final rnd = Random.secure();
+    return base64Encode(List<int>.generate(len, (_) => rnd.nextInt(256)));
+  }
+
   /// This device's pairing nonce (base64), created once and kept on-device.
   static Future<String> pairingNonce() async {
     final existing = await _storage.read(key: _pairNonceName);
     if (existing != null && existing.isNotEmpty) return existing;
-    final rnd = Random.secure();
-    final bytes = List<int>.generate(32, (_) => rnd.nextInt(256));
-    final b64 = base64Encode(bytes);
+    final b64 = randomTokenB64();
     await _storage.write(key: _pairNonceName, value: b64);
     return b64;
   }

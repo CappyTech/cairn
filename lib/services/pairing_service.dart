@@ -3,6 +3,7 @@ import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
 import 'auth_service.dart';
 import 'crypto_service.dart';
+import 'invite_service.dart';
 
 /// What to do with a contact link when we (re)learn a peer's public key.
 enum ContactKeyAction {
@@ -152,12 +153,17 @@ class PairingService {
       final macPresent = decoded.mac != null && decoded.mac!.isNotEmpty;
       var macValid = false;
       if (macPresent) {
-        final expected = await CryptoService.hmacBase64(
-          base64Decode(myNonce),
-          pairMacMessage(
-              fromId: fromId, targetId: me.id, fromPubkey: fromPubkey),
-        );
+        final message = pairMacMessage(
+            fromId: fromId, targetId: me.id, fromPubkey: fromPubkey);
+        // Accept a MAC keyed by our persistent QR nonce (in-person scan)...
+        final expected =
+            await CryptoService.hmacBase64(base64Decode(myNonce), message);
         macValid = CryptoService.macEquals(decoded.mac!, expected);
+        // ...or by a live one-time remote invite (consumed on match).
+        if (!macValid) {
+          macValid =
+              await InviteService.verifyAndConsume(message, decoded.mac!);
+        }
       }
 
       switch (classifyInbound(macPresent: macPresent, macValid: macValid)) {
