@@ -18,7 +18,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: subosito/flutter-action@v2
-        with: { channel: stable }
+        with:
+          channel: stable
+          cache: true          # cache the Flutter SDK + pub packages between runs
       - run: flutter pub get
       - run: flutter build web --release
 
@@ -55,8 +57,20 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: subosito/flutter-action@v2
-        with: { channel: stable }
+        with:
+          channel: stable
+          cache: true          # cache the Flutter SDK + pub packages between runs
       - run: flutter pub get
+
+      # Cache Gradle's dependency + wrapper caches so the .aab build reuses them.
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('android/**/*.gradle*', 'android/**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
 
       - name: Restore upload keystore
         run: echo "${{ secrets.ANDROID_KEYSTORE_B64 }}" | base64 -d > android/app/upload.jks
@@ -98,6 +112,6 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: uk.cappylabs.cairn
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
-          track: internal
+          tracks: internal
           # Release notes shipped with each build — edit before tagging.
           whatsNewDirectory: distribution/whatsnew
