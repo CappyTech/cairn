@@ -180,6 +180,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _contactTile(RecordModel c) {
     final name = _names[c.id] ?? 'Unnamed device';
+    if (c.getStringValue('status') == 'key_changed') {
+      return _keyChangedTile(c, name);
+    }
     final prec = c.getStringValue('precision');
     final paused = prec == 'off';
     return Card(
@@ -211,6 +214,58 @@ class _HomeScreenState extends State<HomeScreen> {
                 value: 'remove',
                 child: ListTile(
                     leading: Icon(Icons.person_remove), title: Text('Remove'))),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// A contact whose public key changed since we paired. We keep the old,
+  /// verified key and pause sharing until the user re-scans them in person —
+  /// so a server-side key swap can't silently redirect their location to us.
+  Widget _keyChangedTile(RecordModel c, String name) {
+    final err = Theme.of(context).colorScheme.error;
+    return Card(
+      color: err.withValues(alpha: 0.08),
+      child: Padding(
+        padding: const EdgeInsets.all(12),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.gpp_maybe, color: err),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(name,
+                      style: const TextStyle(fontWeight: FontWeight.w600)),
+                ),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(
+              "$name's security key changed. This can happen if they reinstalled "
+              'or switched devices — but it could also mean someone is '
+              'impersonating them. Sharing is paused until you re-scan their code '
+              'in person.',
+              style: TextStyle(fontSize: 12, color: err),
+            ),
+            const SizedBox(height: 8),
+            Row(
+              children: [
+                FilledButton.icon(
+                  onPressed: _openScan,
+                  icon: const Icon(Icons.qr_code_scanner, size: 18),
+                  label: const Text('Re-scan to verify'),
+                ),
+                const SizedBox(width: 8),
+                TextButton(
+                  onPressed: () =>
+                      _removeContact(c.getStringValue('peer'), name),
+                  child: const Text('Remove'),
+                ),
+              ],
+            ),
           ],
         ),
       ),

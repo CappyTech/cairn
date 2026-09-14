@@ -1,0 +1,23 @@
+name: ci
+
+# Verify every change before it can merge: static analysis + the test suite.
+# `release.yml` handles `main` (build/deploy), so this covers PRs and every
+# other branch.
+on:
+  pull_request:
+  push:
+    branches-ignore: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+      - run: flutter pub get
+      - run: flutter analyze
+      # Exclude integration tests — they require a live PocketBase server.
+      - run: flutter test --exclude-tags integration

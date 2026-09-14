@@ -1,3 +1,6 @@
+@Tags(['integration'])
+library;
+
 import 'dart:convert';
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -5,6 +8,8 @@ import 'package:pocketbase/pocketbase.dart';
 import 'package:my_app/services/crypto_service.dart';
 
 /// End-to-end integration test against the LIVE PocketBase at 127.0.0.1:8090.
+/// Tagged `integration` and excluded from CI (which has no server); run it
+/// locally with a dev backend up: `flutter test --tags integration`.
 /// Simulates two devices (A and B) sharing an encrypted location, proving:
 /// publish (encrypt) -> store -> subscribe-read -> decrypt, with the server
 /// never able to read the coordinates.

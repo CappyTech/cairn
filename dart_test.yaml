@@ -1,0 +1,5 @@
+# Test tags. `integration` tests talk to a live PocketBase (127.0.0.1:8090) and
+# are excluded from CI — run them locally with a dev backend up:
+#   flutter test --tags integration
+tags:
+  integration:

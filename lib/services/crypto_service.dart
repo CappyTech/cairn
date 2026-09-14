@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:math';
 import 'package:bip39/bip39.dart' as bip39;
 import 'package:cryptography/cryptography.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -21,8 +22,10 @@ class DeviceIdentity {
 class CryptoService {
   static const _storage = FlutterSecureStorage();
   static const _privKeyName = 'x25519_private_seed';
+  static const _pairNonceName = 'pairing_nonce_v1';
   static final X25519 _algo = X25519();
   static final Sha256 _sha256 = Sha256();
+  static final Hmac _hmacSha256 = Hmac.sha256();
 
   /// 32-byte private seed, created once on first launch.
   static Future<List<int>> _seed() async {
@@ -36,8 +39,51 @@ class CryptoService {
 
   /// Permanently forget this device's identity (used when deleting the
   /// account). Without a saved recovery phrase this is irreversible.
-  static Future<void> wipeIdentity() async =>
-      _storage.delete(key: _privKeyName);
+  static Future<void> wipeIdentity() async {
+    await _storage.delete(key: _privKeyName);
+    await _storage.delete(key: _pairNonceName);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Pairing nonce + MAC. A per-device secret is carried in our QR (shown in
+  // person, never sent to the server). Whoever scans it proves they did so by
+  // attaching an HMAC — keyed by that secret — over their pairing request. That
+  // lets the reciprocating side reject a request whose key the server tampered
+  // with (it can't forge the MAC without the secret), which is otherwise the
+  // one direction of pairing not verified face to face.
+  // ---------------------------------------------------------------------------
+
+  /// A fresh cryptographically-random token, base64-encoded ([len] bytes).
+  static String randomTokenB64([int len = 32]) {
+    final rnd = Random.secure();
+    return base64Encode(List<int>.generate(len, (_) => rnd.nextInt(256)));
+  }
+
+  /// This device's pairing nonce (base64), created once and kept on-device.
+  static Future<String> pairingNonce() async {
+    final existing = await _storage.read(key: _pairNonceName);
+    if (existing != null && existing.isNotEmpty) return existing;
+    final b64 = randomTokenB64();
+    await _storage.write(key: _pairNonceName, value: b64);
+    return b64;
+  }
+
+  /// HMAC-SHA256 over [message], keyed by [key], base64-encoded.
+  static Future<String> hmacBase64(List<int> key, String message) async {
+    final mac = await _hmacSha256
+        .calculateMac(utf8.encode(message), secretKey: SecretKey(key));
+    return base64Encode(mac.bytes);
+  }
+
+  /// Constant-time comparison of two base64 MACs (avoids leaking via timing).
+  static bool macEquals(String a, String b) {
+    if (a.length != b.length) return false;
+    var diff = 0;
+    for (var i = 0; i < a.length; i++) {
+      diff |= a.codeUnitAt(i) ^ b.codeUnitAt(i);
+    }
+    return diff == 0;
+  }
 
   /// This device's base64 public key.
   static Future<String> ensurePublicKey() async {
