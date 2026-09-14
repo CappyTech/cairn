@@ -69,10 +69,27 @@ jobs:
           keyPassword=${{ secrets.KEY_PASSWORD }}
           EOF
 
-      - run: flutter build appbundle --release --dart-define=PB_URL=https://cairn.cappylabs.uk
+      # versionName comes from the tag (strip a leading "v"); versionCode is the
+      # monotonic Actions run number (always increases — Play requires that).
+      - name: Derive version from tag
+        run: echo "APP_VERSION=${GITHUB_REF_NAME#v}" >> "$GITHUB_ENV"
+      - run: >-
+          flutter build appbundle --release
+          --build-name=$APP_VERSION
+          --build-number=${{ github.run_number }}
+          --dart-define=PB_URL=https://cairn.cappylabs.uk
+
+      # Always attach the .aab to the run so it's downloadable, even if the Play
+      # upload below is skipped/fails (e.g. before secrets are set).
+      - name: Upload .aab artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: cairn-aab-${{ env.APP_VERSION }}
+          path: build/app/outputs/bundle/release/app-release.aab
 
       - name: Upload to Google Play (internal track)
         uses: r0adkll/upload-google-play@v1
+        continue-on-error: true   # don't fail the build if Play isn't set up yet
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: uk.cappylabs.cairn
