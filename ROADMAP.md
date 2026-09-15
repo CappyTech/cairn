@@ -57,11 +57,14 @@ The things a privacy product cannot ship without.
   on every PR and non-`main` branch. *(Optional next: add a
   `dart format --set-exit-if-changed` check.)*
 - **Grow the test suite** *(ongoing)*. Covered so far: pairing decision + MAC
-  verification, key-change detection, one-time invite expiry, and the
-  location-sharing logic — per-contact share action (precise / approximate /
-  paused / key-changed), payload coarsening, and the decrypt→parse round trip.
-  *Still want:* widget tests for the core screens, and end-to-end coverage of
-  the PocketBase-backed paths (currently only the `integration`-tagged test).
+  verification, key-change detection, one-time invite expiry, the
+  location-sharing logic (share action, payload coarsening, decrypt→parse round
+  trip), and the first **widget tests** — the contacts row (`ContactTile`,
+  extracted as a presentational widget) across its precise / approximate /
+  paused / global-override / key-changed states. *Still want:* widget coverage
+  of the other screens (which need a testability seam — their `initState` calls
+  static services), and end-to-end coverage of the PocketBase-backed paths
+  (currently only the `integration`-tagged test).
 - **Abuse resistance on open endpoints** *(rate limiting added; verify on
   server)*. `users.create` and `pair_requests` are open by design (no account
   gate). A migration enables PocketBase's built-in rate limiter for
