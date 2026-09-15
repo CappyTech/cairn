@@ -15,6 +15,7 @@ import 'admin_screen.dart';
 import 'backup_screen.dart';
 import '../widgets/restart_widget.dart';
 import '../widgets/contact_tile.dart';
+import '../widgets/server_settings_dialog.dart';
 import '../theme/brand.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -135,51 +136,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _serverSettings() async {
-    final controller = TextEditingController(
-        text: (await savedServerUrl()).isEmpty ? serverUrl : await savedServerUrl());
-    if (!mounted) return;
-    final url = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Server address'),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text('Currently: $serverUrl',
-                style: const TextStyle(color: Colors.grey, fontSize: 12)),
-            const SizedBox(height: 12),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.url,
-              autocorrect: false,
-              decoration: const InputDecoration(
-                labelText: 'PocketBase URL',
-                hintText: 'http://192.168.8.176:8090',
-                border: OutlineInputBorder(),
-              ),
-            ),
-            const SizedBox(height: 8),
-            const Text(
-              'On a real phone, use your PC\'s network address, not localhost.',
-              style: TextStyle(color: Colors.grey, fontSize: 12),
-            ),
-          ],
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Save & restart')),
-        ],
-      ),
-    );
-    if (url != null && url.isNotEmpty) {
-      await setServerUrl(url);
-      if (mounted) await RestartWidget.restart(context);
-    }
+    final changed = await showServerSettingsDialog(context);
+    if (changed && mounted) await RestartWidget.restart(context);
   }
 
   Widget _contactTile(RecordModel c) {
