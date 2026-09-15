@@ -47,11 +47,14 @@ class _MapScreenState extends State<MapScreen> {
     try {
       final pos = await LocationService.current();
       _onPosition(pos, recenter: true);
+      _publish(pos); // one share on first fix so contacts aren't left blank
       setState(() => _loading = false);
 
       _posSub = LocationService.stream().listen((p) => _onPosition(p));
-      // Heartbeat: re-share the last position every 30s so contacts see we're
-      // still active even when standing still (presence).
+      // Publish on a FIXED cadence, not per movement. The map tracks our own
+      // position live and locally, but shares go out every 30s whether we're
+      // moving or standing still — so the server can't read our movement /
+      // activity timing off the share update times (a metadata side-channel).
       _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
         if (_lastPos != null) _publish(_lastPos!);
       });
@@ -68,7 +71,8 @@ class _MapScreenState extends State<MapScreen> {
     final here = LatLng(p.latitude, p.longitude);
     if (mounted) setState(() => _me = here);
     if (recenter) _map.move(here, 14);
-    _publish(p);
+    // Note: no publish here — sharing is on the fixed 30s cadence below, so
+    // server-visible update timing doesn't track our movement.
   }
 
   Future<void> _publish(Position p) async {
