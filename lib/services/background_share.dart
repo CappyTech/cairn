@@ -4,10 +4,12 @@ import 'package:flutter/widgets.dart';
 import 'package:flutter_background_service/flutter_background_service.dart';
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:geolocator/geolocator.dart';
 import 'pb_client.dart';
 import 'auth_service.dart';
 import 'location_sharing_service.dart';
+import 'bg_strategy.dart';
 
 /// Outcome of trying to turn on background sharing.
 enum BgEnableResult {
@@ -130,7 +132,11 @@ void onStart(ServiceInstance service) async {
   WidgetsFlutterBinding.ensureInitialized();
   DartPluginRegistrant.ensureInitialized();
 
-  service.on('stop').listen((_) => service.stopSelf());
+  Timer? tickTimer;
+  service.on('stop').listen((_) {
+    tickTimer?.cancel();
+    service.stopSelf();
+  });
 
   // The background isolate has its own globals — set them up from scratch.
   await initPocketBase();
@@ -138,10 +144,29 @@ void onStart(ServiceInstance service) async {
     await AuthService.signInWithDevice();
   } catch (_) {}
 
-  Future<void> publishOnce() async {
+  final battery = Battery();
+
+  // Read battery state and pick this tick's cadence + accuracy. Battery is not
+  // location-correlated, so backing off on a low battery saves power without
+  // leaking movement timing (unlike a movement-triggered backoff would).
+  Future<BgStrategy> currentStrategy() async {
+    int? percent;
+    var charging = false;
+    try {
+      percent = await battery.batteryLevel;
+      final state = await battery.batteryState;
+      charging =
+          state == BatteryState.charging || state == BatteryState.full;
+    } catch (_) {
+      // Battery unreadable (e.g. emulator) → healthy defaults.
+    }
+    return backgroundStrategy(percent: percent, charging: charging);
+  }
+
+  Future<void> publishOnce(LocationAccuracy accuracy) async {
     try {
       final pos = await Geolocator.getCurrentPosition(
-        locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
+        locationSettings: LocationSettings(accuracy: accuracy),
       );
       await LocationSharingService.publish(
           lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
@@ -150,8 +175,23 @@ void onStart(ServiceInstance service) async {
     }
   }
 
-  await publishOnce();
-  Timer.periodic(const Duration(minutes: 2), (_) => publishOnce());
+  // Self-rescheduling tick: the interval can change between ticks as the
+  // battery drains or the phone is plugged in, so we re-arm a one-shot Timer
+  // each time rather than a fixed Timer.periodic.
+  Future<void> tick() async {
+    final strategy = await currentStrategy();
+    // Surface the current mode in the persistent notification.
+    if (service is AndroidServiceInstance) {
+      try {
+        await service.setForegroundNotificationInfo(
+            title: 'Cairn', content: strategy.label);
+      } catch (_) {/* best-effort */}
+    }
+    await publishOnce(strategy.accuracy);
+    tickTimer = Timer(strategy.interval, tick);
+  }
+
+  await tick();
 }
 
 @pragma('vm:entry-point')
