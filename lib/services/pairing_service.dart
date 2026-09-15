@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'crypto_service.dart';
 import 'invite_service.dart';
+import 'nickname_service.dart';
 
 /// What to do with a contact link when we (re)learn a peer's public key.
 enum ContactKeyAction {
@@ -248,6 +249,8 @@ class PairingService {
         filter: 'sender = "${me.id}" && recipient = "$peerId"')) {
       await pb.collection('location_shares').delete(s.id);
     }
+    // Drop any local nickname so it can't linger for a re-paired stranger.
+    await NicknameService.remove(peerId);
   }
 
   /// Decide what to do with a contact link when a peer's public key arrives.

@@ -6,6 +6,7 @@ import '../services/pb_client.dart';
 import '../services/auth_service.dart';
 import '../services/pairing_service.dart';
 import '../services/background_share.dart';
+import '../services/nickname_service.dart';
 import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
@@ -62,11 +63,14 @@ class _HomeScreenState extends State<HomeScreen> {
     try {
       await PairingService.processPendingRequests();
       final contacts = await PairingService.myContacts();
-      // Decrypt each contact's name (stored encrypted-to-self on the server).
+      // A local nickname (if set) wins over the contact's own decrypted name.
+      final nicks = await NicknameService.all();
       _names.clear();
       for (final c in contacts) {
-        _names[c.id] =
+        final peerName =
             await PairingService.decryptName(c.getStringValue('peer_name'));
+        _names[c.id] = NicknameService.resolveName(
+            alias: nicks[c.getStringValue('peer')], peerName: peerName);
       }
       if (mounted) setState(() { _contacts = contacts; _loading = false; });
     } catch (_) {
@@ -188,7 +192,49 @@ class _HomeScreenState extends State<HomeScreen> {
       onSetPrecision: (p) => _setPrecision(c, p),
       onRemove: () => _removeContact(c.getStringValue('peer'), name),
       onRescan: _openScan,
+      onRename: () => _renameContact(c, name),
     );
+  }
+
+  Future<void> _renameContact(RecordModel c, String currentName) async {
+    final peerId = c.getStringValue('peer');
+    final controller = TextEditingController(text: currentName);
+    final newAlias = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Rename contact'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              decoration: const InputDecoration(
+                  hintText: 'e.g. Mum, Work', border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'A private label kept only on this device — they won\'t see it. '
+              'Clear it to use the name they chose.',
+              style: TextStyle(color: Brand.stone, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              // Empty string is a valid result: it clears the nickname.
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (newAlias == null) return; // dialog dismissed
+    await NicknameService.set(peerId, newAlias);
+    await _refresh();
   }
 
   Future<void> _setPrecision(RecordModel c, String precision) async {

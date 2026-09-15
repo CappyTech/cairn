@@ -142,8 +142,11 @@ capability-token core as the mailbox model. So the safe first step was timing.
   decides create/update/delete/none per contact; writes are unchanged.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
-- **Contact management UX.** Rename contacts, see last-seen/stale state clearly,
-  and a friendlier pairing flow.
+- **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
+  nickname (`services/nickname_service.dart`) overrides the contact's own name
+  across the list and the map; kept entirely off the server and separate from
+  their `peer_name`, so a re-scan won't clobber it. *Still want:* clearer
+  last-seen/stale state and a friendlier pairing flow.
 - **Map & sharing UX.** Presence/staleness affordances, precision indicators on
   the map, and clearer per-contact controls.
 
