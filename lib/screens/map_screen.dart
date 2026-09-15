@@ -50,11 +50,14 @@ class _MapScreenState extends State<MapScreen> {
       // screen meanwhile. Bail before touching state or the map controller.
       if (!mounted) return;
       _onPosition(pos, recenter: true);
+      _publish(pos); // one share on first fix so contacts aren't left blank
       setState(() => _loading = false);
 
       _posSub = LocationService.stream().listen((p) => _onPosition(p));
-      // Heartbeat: re-share the last position every 30s so contacts see we're
-      // still active even when standing still (presence).
+      // Publish on a FIXED cadence, not per movement. The map tracks our own
+      // position live and locally, but shares go out every 30s whether we're
+      // moving or standing still — so the server can't read our movement /
+      // activity timing off the share update times (a metadata side-channel).
       _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
         if (_lastPos != null) _publish(_lastPos!);
       });

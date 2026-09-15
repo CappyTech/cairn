@@ -98,19 +98,23 @@ The things a privacy product cannot ship without.
 Delivering on the README's stated future goal. **Design:
 [`docs/metadata-privacy.md`](docs/metadata-privacy.md)** — threat model, what
 the server sees today, the PocketBase authz tension that shapes the design, and
-a phased plan. Recommended first step: **sealed sender** (drop `sender` from
-`location_shares`, move a signed sender id into the ciphertext) — biggest leak
-reduction with no re-architecture.
+a phased plan. Key finding (§3.1): sealed sender is *not* a trivial standalone —
+removing `sender` breaks the update/delete authz rules, so it needs the same
+capability-token core as the mailbox model. So the safe first step was timing.
 
-- **Reduce the social graph the server can see.** Investigate blinded or
-  rotating routing identifiers so `contacts` / `location_shares` don't expose
-  who-shares-with-whom in the clear. (See the design doc — this is the hard
-  part, because PocketBase's access rules are written over those relations.)
-- **Minimise timestamp leakage.** `last_seen` and record `updated` times are a
-  presence side-channel; consider coarsening, client-derived presence, or
-  dropping the server heartbeat.
-- **Sealed sender.** Explore hiding the `sender` field from the server on
-  `location_shares`, so only the recipient learns who a blob is from.
+- ✅ **Minimise timestamp leakage** *(first piece done)*. Foreground publishing
+  is now on a **fixed 30 s cadence** instead of per-movement, so the server can
+  no longer read movement/activity timing off `location_shares.updated`. Still
+  open: constant cadence while the app is closed; coarsening record `updated`.
+  (`last_seen` is deliberately kept — it powers the admin dashboard.)
+- **Reduce the social graph the server can see.** Blinded / rotating routing
+  identifiers so `contacts` / `location_shares` don't expose who-shares-with-whom.
+  This is the hard part: PocketBase's access rules are written over those
+  relations, so it needs capability-based authz (design a token once; sealed
+  sender + mailbox + contact handles all build on it). Validate against a staging
+  PocketBase before it touches prod — the migrations are breaking.
+- **Sealed sender.** Hide the `sender` field on `location_shares` (signed sender
+  id inside the ciphertext) — gated on the capability-authz work above.
 
 ## Phase 4 — Resilience & multi-device
 

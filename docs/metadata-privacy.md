@@ -76,11 +76,38 @@ design problem; the crypto for hiding content is the easy part.
 This is why the options below split into "cheap, within PocketBase's model" and
 "needs a different addressing model."
 
+### 3.1 The authz that must move: not just create, but update/delete
+
+A subtlety that bit the "sealed sender is cheap" plan (see 4a): `sender` isn't
+only a routing hint — `location_shares` uses it to authorize **update and
+delete**:
+
+```
+updateRule / deleteRule: @request.auth.id = sender.id
+```
+
+The sender upserts and deletes *its own* row every publish tick. Drop `sender`
+and no field is left for a rule to say "only the original writer may modify this
+row." Leaving update/delete open to any authenticated user is a
+griefing/DoS hole (anyone could overwrite or wipe anyone's shares, and the
+recipient would just see undecryptable garbage). So removing the sender identity
+forces a **capability**: store an opaque, unguessable `row_key` (or a token
+derived from the pairing secret) that the writer proves knowledge of to
+update/delete. PocketBase can't express "prove knowledge of a secret" in a
+list/view rule, so this needs a small **hook** (an `onRecordUpdateRequest` /
+`onRecordDeleteRequest` check), or the row is treated as append-only and the
+recipient prunes.
+
+**Consequence:** sealed sender (4a) is therefore *not* a standalone field
+removal — it shares the same capability-authz core as the mailbox model (4b) and
+contact handles (4d). Only timing minimization (4c) is truly independent. Design
+the capability token once and 4a/4b/4d all build on it.
+
 ---
 
 ## 4. Options
 
-### 4a. Sealed sender *(cheap, high value)*
+### 4a. Sealed sender *(high value; not as cheap as it first looks — see §3.1)*
 Stop putting the sender's real id on `location_shares`. The recipient already
 decrypts with their own key regardless of who sent it, and can identify the
 sender from a signed field *inside* the ciphertext. Server keeps only
@@ -88,11 +115,20 @@ sender from a signed field *inside* the ciphertext. Server keeps only
 
 - **Hides:** who sends to a given recipient (halves the graph exposure on the
   hot collection).
-- **Cost:** low. Move sender identity into the encrypted blob; loosen the
-  create rule (can't check `sender.id` anymore) — accept that anyone may
-  *write* to a recipient's inbox (rate-limited; recipient drops blobs that
-  don't decrypt/verify). Recipient-side dedup by in-blob sender id.
-- **PocketBase fit:** good. One field removed, rules relaxed on create only.
+- **Cost:** medium, once §3.1 is accounted for. Move sender identity into the
+  encrypted blob; loosen the *create* rule (can't check `sender.id`) — accept
+  that anyone may *write* to a recipient's inbox (rate-limited; recipient drops
+  blobs that don't decrypt/verify, dedup by in-blob sender id). But
+  **update/delete now need a capability** (opaque `row_key` + a hook, or an
+  append-only inbox the recipient prunes), because there's no `sender` to
+  authorize on — this is the real work, shared with 4b/4d.
+- **PocketBase fit:** field removal + rule changes are easy; the capability
+  check for update/delete needs a hook (or an append-only redesign).
+- **Migration/rollout:** breaking. The migration drops a column and rewrites
+  rules on the **production** DB, and old app clients that still send/read
+  `sender` stop working until updated — so it needs a coordinated client
+  rollout and a way to validate the migration before deploy (neither available
+  in the authoring environment; do not ship blind).
 
 ### 4b. Unlinkable delivery addresses / mailbox model *(hard, closes the graph)*
 Replace `recipient = <userId>` with an **opaque inbox address** that the server
@@ -112,15 +148,20 @@ inboxes. The server sees writes to random-looking buckets, not `A→B`.
 - **PocketBase fit:** partial. Doable with a custom collection + token check in
   a hook, but it's a real re-architecture, and rotation/subscription are fiddly.
 
-### 4c. Timing minimization *(cheap, partial)*
+### 4c. Timing minimization *(cheap, partial — first piece shipped)*
 Blunt the "when" signal:
+- ✅ **Fixed-cadence foreground publishing** *(done)*. The map used to publish
+  on every ~10 m of movement, so the server could read movement vs. stillness
+  off `location_shares.updated` cadence. It now publishes only on the fixed 30 s
+  heartbeat (the background service was already a fixed 2 min), so server-visible
+  write timing no longer tracks movement. The map still tracks own-position live
+  and locally. Net: fewer writes while moving, so this is also a battery win.
 - `last_seen` presence heartbeat — **deferred**: it powers the admin dashboard;
   the team chose to keep it (see roadmap). Revisit if the admin presence view
   is dropped.
-- Publish on a **fixed cadence** regardless of movement, and optionally write a
-  **dummy/refresh** even when stationary, so update timing stops tracking real
-  activity. Costs battery/writes.
-- Consider coarsening record `updated` exposure (harder — it's a system field).
+- Further: optional **dummy/refresh** writes even when the app is closed to make
+  cadence fully constant (costs battery/writes); coarsening record `updated`
+  exposure (harder — it's a system field).
 
 ### 4d. Contact-graph hiding *(hard, tied to 4b)*
 `contacts` is local-first (it's *my* list of *my* peers), but its rows still
@@ -132,22 +173,25 @@ rather than a `users` relation, and keep the mapping only client-side
 
 ## 5. Recommended path
 
-Phased, cheapest-first, each shippable independently:
+Phased, revised after the §3.1 finding — cheapest and safest first:
 
-**5a — Sealed sender (do first).** Highest leak-reduction per unit of work,
-stays inside PocketBase's model, and composes with everything later. Removes
-`sender` from `location_shares`; move a signed sender id into the blob;
-recipient verifies and dedups. Rate-limiting (already added) covers the relaxed
-create rule.
+**5a — ✅ Fixed-cadence publishing *(done)*.** Decouples update timing from
+movement; pure client change, no schema/authz. Shipped (see 4c). Optional cover
+writes can follow if we want constant cadence while the app is closed.
 
-**5b — Fixed-cadence publishing + optional cover writes.** Decouple update
-timing from movement. Small client change; measure battery impact.
+**5b — Capability token, then sealed sender.** The §3.1 finding means sealed
+sender is *not* the trivial first step it looked like — it needs the
+capability-authz core (opaque `row_key` + an update/delete hook, or an
+append-only inbox). Design and **validate the capability + migration against a
+staging PocketBase** before it touches prod, and roll the client out in lockstep
+(the migration is breaking). Once the capability exists, dropping `sender` and
+signing it into the blob is the smaller part.
 
 **5c — Unlinkable mailboxes (prototype behind a flag).** The real graph-hiding
-step (4b/4d). Prototype the inbox-id derivation + capability-token authz on a
-throwaway collection before committing; validate the realtime-subscription and
-rotation story. Treat the "compromised server can write to an inbox" property
-explicitly.
+step (4b/4d), built on the same capability from 5b. Prototype inbox-id
+derivation + rotation + the realtime-subscription story on a throwaway
+collection first. Treat the "compromised server / leaked token can write to an
+inbox" property explicitly.
 
 **Beyond:** true resistance to a server doing traffic analysis across all
 accounts (correlating even opaque buckets by timing/size) is a research-grade
