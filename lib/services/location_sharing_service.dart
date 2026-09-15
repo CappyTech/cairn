@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'pairing_service.dart';
 import 'crypto_service.dart';
+import 'nickname_service.dart';
 import 'prefs.dart';
 
 /// A decrypted location received from a paired contact.
@@ -194,10 +195,16 @@ class LocationSharingService {
     final me = AuthService.currentUser!;
     final byId = <String, ContactLocation>{};
 
+    // Resolve display names once (local nickname wins over their own name), so
+    // map labels match the contacts list.
+    final nicks = await NicknameService.all();
     final names = <String, String>{};
     for (final c in await PairingService.myContacts()) {
-      names[c.getStringValue('peer')] =
-          await PairingService.decryptName(c.getStringValue('peer_name'));
+      final peerId = c.getStringValue('peer');
+      names[peerId] = NicknameService.resolveName(
+        alias: nicks[peerId],
+        peerName: await PairingService.decryptName(c.getStringValue('peer_name')),
+      );
     }
 
     Future<void> ingest(RecordModel r) async {

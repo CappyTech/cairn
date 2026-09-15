@@ -24,6 +24,7 @@ class ContactTile extends StatelessWidget {
   final void Function(String precision) onSetPrecision;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
+  final VoidCallback onRename;
 
   const ContactTile({
     super.key,
@@ -34,6 +35,7 @@ class ContactTile extends StatelessWidget {
     required this.onSetPrecision,
     required this.onRemove,
     required this.onRescan,
+    required this.onRename,
   });
 
   static String precLabel(String p) => switch (p) {
@@ -42,6 +44,13 @@ class ContactTile extends StatelessWidget {
         _ => 'Sharing precise',
       };
 
+  /// The avatar initial. Guards against an empty name (e.g. a contact paired
+  /// from a crafted QR/invite whose name was blank) so indexing never throws.
+  static String initial(String name) {
+    final t = name.trim();
+    return t.isEmpty ? '?' : t[0].toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (keyChanged) return _keyChanged(context);
@@ -49,7 +58,7 @@ class ContactTile extends StatelessWidget {
     final paused = precision == 'off';
     return Card(
       child: ListTile(
-        leading: CircleAvatar(child: Text(name[0].toUpperCase())),
+        leading: CircleAvatar(child: Text(initial(name))),
         title: Text(name),
         subtitle: Text(
           approxOnly && !paused
@@ -61,12 +70,21 @@ class ContactTile extends StatelessWidget {
                   paused ? Theme.of(context).colorScheme.error : Brand.stone),
         ),
         trailing: PopupMenuButton<String>(
-          onSelected: (v) => v == 'remove' ? onRemove() : onSetPrecision(v),
+          onSelected: (v) => switch (v) {
+            'rename' => onRename(),
+            'remove' => onRemove(),
+            _ => onSetPrecision(v),
+          },
           itemBuilder: (context) => [
             _precItem('precise', 'Precise', Icons.gps_fixed),
             _precItem('approximate', 'Approximate (~1 km)', Icons.blur_on),
             _precItem('off', 'Pause sharing', Icons.pause_circle_outline),
             const PopupMenuDivider(),
+            const PopupMenuItem(
+                value: 'rename',
+                child: ListTile(
+                    leading: Icon(Icons.drive_file_rename_outline),
+                    title: Text('Rename'))),
             const PopupMenuItem(
                 value: 'remove',
                 child: ListTile(

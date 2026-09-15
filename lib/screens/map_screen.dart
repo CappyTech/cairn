@@ -75,7 +75,10 @@ class _MapScreenState extends State<MapScreen> {
     if (!mounted) return; // moving a disposed MapController throws
     setState(() => _me = LatLng(p.latitude, p.longitude));
     if (recenter) _map.move(_me!, 14);
-    _publish(p);
+    // Note: no publish here. Shares go out on a fixed 30s cadence (the
+    // heartbeat), not per movement, so the server can't infer our movement /
+    // activity timing from share-update times. The first fix is shared once in
+    // _start().
   }
 
   Future<void> _publish(Position p) async {

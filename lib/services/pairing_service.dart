@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'crypto_service.dart';
 import 'invite_service.dart';
+import 'nickname_service.dart';
 
 /// What to do with a contact link when we (re)learn a peer's public key.
 enum ContactKeyAction {
@@ -70,7 +71,11 @@ class PairingService {
   static Future<String> decryptName(String cipher) async {
     if (cipher.isEmpty) return 'Unnamed device';
     try {
-      return await CryptoService.openSealedText(cipher);
+      final name = await CryptoService.openSealedText(cipher);
+      // A blank name (e.g. paired from a QR/invite with an empty name) decrypts
+      // fine but must not surface empty — callers render an avatar initial off
+      // the first character.
+      return name.isEmpty ? 'Unnamed device' : name;
     } catch (_) {
       return 'Unnamed device';
     }
@@ -244,6 +249,8 @@ class PairingService {
         filter: 'sender = "${me.id}" && recipient = "$peerId"')) {
       await pb.collection('location_shares').delete(s.id);
     }
+    // Drop any local nickname so it can't linger for a re-paired stranger.
+    await NicknameService.remove(peerId);
   }
 
   /// Decide what to do with a contact link when a peer's public key arrives.

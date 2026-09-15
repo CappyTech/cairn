@@ -15,6 +15,7 @@ void main() {
     void Function(String)? onSetPrecision,
     VoidCallback? onRemove,
     VoidCallback? onRescan,
+    VoidCallback? onRename,
   }) =>
       ContactTile(
         name: name,
@@ -24,6 +25,7 @@ void main() {
         onSetPrecision: onSetPrecision ?? (_) {},
         onRemove: onRemove ?? () {},
         onRescan: onRescan ?? () {},
+        onRename: onRename ?? () {},
       );
 
   group('ContactTile.precLabel', () {
@@ -41,6 +43,21 @@ void main() {
     await tester.pumpWidget(host(tile(name: 'Alice', precision: 'precise')));
     expect(find.text('Alice'), findsOneWidget);
     expect(find.text('Sharing precise'), findsOneWidget);
+  });
+
+  testWidgets('empty name renders without crashing (crafted invite)',
+      (tester) async {
+    // A blank name must not throw at name[0] — it would take down the whole
+    // contacts list. The avatar falls back to a placeholder initial.
+    await tester.pumpWidget(host(tile(name: '')));
+    expect(tester.takeException(), isNull);
+    expect(find.text('?'), findsOneWidget);
+  });
+
+  test('ContactTile.initial guards empty and whitespace names', () {
+    expect(ContactTile.initial(''), '?');
+    expect(ContactTile.initial('   '), '?');
+    expect(ContactTile.initial('alice'), 'A');
   });
 
   testWidgets('paused shows the paused subtitle', (tester) async {
@@ -88,5 +105,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(picked, 'off');
+  });
+
+  testWidgets('rename menu item fires onRename', (tester) async {
+    var renamed = false;
+    await tester.pumpWidget(host(tile(onRename: () => renamed = true)));
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+
+    expect(renamed, isTrue);
   });
 }
