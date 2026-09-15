@@ -15,6 +15,7 @@ void main() {
     void Function(String)? onSetPrecision,
     VoidCallback? onRemove,
     VoidCallback? onRescan,
+    VoidCallback? onRename,
   }) =>
       ContactTile(
         name: name,
@@ -24,6 +25,7 @@ void main() {
         onSetPrecision: onSetPrecision ?? (_) {},
         onRemove: onRemove ?? () {},
         onRescan: onRescan ?? () {},
+        onRename: onRename ?? () {},
       );
 
   group('ContactTile.precLabel', () {
@@ -88,5 +90,17 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(picked, 'off');
+  });
+
+  testWidgets('rename menu item fires onRename', (tester) async {
+    var renamed = false;
+    await tester.pumpWidget(host(tile(onRename: () => renamed = true)));
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Rename'));
+    await tester.pumpAndSettle();
+
+    expect(renamed, isTrue);
   });
 }
