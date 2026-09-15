@@ -70,7 +70,11 @@ class PairingService {
   static Future<String> decryptName(String cipher) async {
     if (cipher.isEmpty) return 'Unnamed device';
     try {
-      return await CryptoService.openSealedText(cipher);
+      final name = await CryptoService.openSealedText(cipher);
+      // A blank name (e.g. paired from a QR/invite with an empty name) decrypts
+      // fine but must not surface empty — callers render an avatar initial off
+      // the first character.
+      return name.isEmpty ? 'Unnamed device' : name;
     } catch (_) {
       return 'Unnamed device';
     }

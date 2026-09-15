@@ -42,6 +42,13 @@ class ContactTile extends StatelessWidget {
         _ => 'Sharing precise',
       };
 
+  /// The avatar initial. Guards against an empty name (e.g. a contact paired
+  /// from a crafted QR/invite whose name was blank) so indexing never throws.
+  static String initial(String name) {
+    final t = name.trim();
+    return t.isEmpty ? '?' : t[0].toUpperCase();
+  }
+
   @override
   Widget build(BuildContext context) {
     if (keyChanged) return _keyChanged(context);
@@ -49,7 +56,7 @@ class ContactTile extends StatelessWidget {
     final paused = precision == 'off';
     return Card(
       child: ListTile(
-        leading: CircleAvatar(child: Text(name[0].toUpperCase())),
+        leading: CircleAvatar(child: Text(initial(name))),
         title: Text(name),
         subtitle: Text(
           approxOnly && !paused
