@@ -6,6 +6,7 @@ import '../services/pb_client.dart';
 import '../services/auth_service.dart';
 import '../services/pairing_service.dart';
 import '../services/background_share.dart';
+import '../services/notification_service.dart';
 import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
@@ -51,9 +52,17 @@ class _HomeScreenState extends State<HomeScreen> {
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
     await _refresh();
-    // Live: reciprocate the instant someone scans my code.
+    // Live: reciprocate the instant someone scans my code, and let the user
+    // know a new contact connected (a local, content-free notification).
     _unsub = await pb.collection('pair_requests').subscribe('*', (e) async {
-      await PairingService.processPendingRequests();
+      final newlyPaired = await PairingService.processPendingRequests();
+      for (final name in newlyPaired) {
+        await NotificationService.show(
+          id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
+          title: 'New contact',
+          body: "You're now connected with $name.",
+        );
+      }
       await _refresh();
     });
   }

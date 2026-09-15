@@ -144,7 +144,12 @@ class PairingService {
 
   /// Someone scanned MY code → create the mirror contact and clear the request.
   /// Call on app open and whenever a realtime request arrives.
-  static Future<void> processPendingRequests() async {
+  ///
+  /// Returns the display names of contacts that were *newly* created by this
+  /// pass (a verified reciprocation), so the caller can announce "you're now
+  /// connected with X". Re-confirmations and key-change flags are not included.
+  static Future<List<String>> processPendingRequests() async {
+    final newlyPaired = <String>[];
     final me = AuthService.currentUser!;
     final myNonce = await CryptoService.pairingNonce();
     final reqs = await pb.collection('pair_requests').getFullList();
@@ -172,13 +177,16 @@ class PairingService {
 
       switch (classifyInbound(macPresent: macPresent, macValid: macValid)) {
         case InboundPairDecision.trusted:
-          await _ensureContact(
+          final action = await _ensureContact(
             ownerId: me.id,
             peerId: fromId,
             peerName: decoded.name,
             peerKey: fromPubkey,
             trusted: true, // MAC verified → key is authentic
           );
+          if (action == ContactKeyAction.createNew) {
+            newlyPaired.add(decoded.name);
+          }
         case InboundPairDecision.unverified:
           await _ensureContact(
             ownerId: me.id,
@@ -197,6 +205,7 @@ class PairingService {
       }
       await pb.collection('pair_requests').delete(r.id);
     }
+    return newlyPaired;
   }
 
   /// Decrypt a pairing request's `from_name`, returning the sender's display
@@ -285,7 +294,9 @@ class PairingService {
     return action;
   }
 
-  static Future<void> _ensureContact({
+  /// Returns the action actually applied (or null if the request was dropped),
+  /// so callers can tell a brand-new pairing from a re-confirmation.
+  static Future<ContactKeyAction?> _ensureContact({
     required String ownerId,
     required String peerId,
     required String peerName,
@@ -306,7 +317,7 @@ class PairingService {
       ),
       createIfMissing,
     );
-    if (action == null) return; // unsigned request for an unknown contact: drop
+    if (action == null) return null; // unsigned request for unknown contact: drop
 
     switch (action) {
       case ContactKeyAction.keyChanged:
@@ -334,6 +345,7 @@ class PairingService {
           'precision': 'precise',
         });
     }
+    return action;
   }
 
   /// Set how precisely I share with a contact: 'precise', 'approximate', or

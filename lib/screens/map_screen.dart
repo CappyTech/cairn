@@ -5,6 +5,8 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
+import '../services/notification_service.dart';
+import '../services/presence.dart';
 import '../theme/brand.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
@@ -31,6 +33,13 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> Function()? _unsub;
   Timer? _heartbeat;
 
+  // Peer ids we've already alerted about going quiet, so a still-offline
+  // contact doesn't re-notify every tick. Cleared when they come back fresh.
+  final Set<String> _staleNotified = {};
+  // Skip the very first evaluation: contacts loaded already-stale on open
+  // shouldn't fire an alert (you didn't just "lose" them this session).
+  bool _presenceSeeded = false;
+
   @override
   void initState() {
     super.initState();
@@ -41,7 +50,9 @@ class _MapScreenState extends State<MapScreen> {
     // Receive contacts' locations regardless of our own GPS state.
     // (Guard so a Retry after a GPS error doesn't subscribe twice.)
     _unsub ??= await LocationSharingService.subscribe((map) {
-      if (mounted) setState(() => _contacts = map);
+      if (!mounted) return;
+      setState(() => _contacts = map);
+      _checkStale();
     });
 
     try {
@@ -60,6 +71,9 @@ class _MapScreenState extends State<MapScreen> {
       // activity timing off the share update times (a metadata side-channel).
       _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
         if (_lastPos != null) _publish(_lastPos!);
+        // Staleness is time-based, so re-evaluate on a timer (not just on
+        // incoming shares) to catch a contact who simply stopped sharing.
+        _checkStale();
       });
     } catch (e) {
       if (!mounted) return;
@@ -86,6 +100,40 @@ class _MapScreenState extends State<MapScreen> {
       await LocationSharingService.publish(
           lat: p.latitude, lng: p.longitude, accuracy: p.accuracy);
     } catch (_) {/* offline / no contacts — fine */}
+  }
+
+  /// Fire a one-off local notification when a contact crosses into "stale"
+  /// (stopped sharing for a while), and re-arm once they're fresh again. The
+  /// first pass seeds the baseline so contacts already quiet on open don't
+  /// alert — only genuine transitions this session do.
+  void _checkStale() {
+    final now = DateTime.now();
+    final updatedById = {
+      for (final e in _contacts.entries) e.key: e.value.updated,
+    };
+    _staleNotified.removeAll(Presence.freshAgain(
+      updatedById: updatedById,
+      alreadyNotified: _staleNotified,
+      now: now,
+    ));
+    final newly = Presence.newlyStale(
+      updatedById: updatedById,
+      alreadyNotified: _staleNotified,
+      now: now,
+    );
+    _staleNotified.addAll(newly);
+    if (!_presenceSeeded) {
+      _presenceSeeded = true; // adopt current state as baseline, don't alert
+      return;
+    }
+    for (final id in newly) {
+      final name = _contacts[id]?.name ?? 'A contact';
+      NotificationService.show(
+        id: NotificationService.idFor('stale:$id'),
+        title: 'Contact went quiet',
+        body: "$name hasn't shared their location in a while.",
+      );
+    }
   }
 
   @override
