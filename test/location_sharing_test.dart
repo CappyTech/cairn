@@ -60,6 +60,35 @@ void main() {
     });
   });
 
+  group('shareOpFor', () {
+    test('skip → no write, regardless of an existing share', () {
+      expect(LocationSharingService.shareOpFor(ShareAction.skip, true),
+          ShareOp.none);
+      expect(LocationSharingService.shareOpFor(ShareAction.skip, false),
+          ShareOp.none);
+    });
+
+    test('clearAndSkip deletes an existing share, else no-op', () {
+      expect(LocationSharingService.shareOpFor(ShareAction.clearAndSkip, true),
+          ShareOp.delete);
+      expect(LocationSharingService.shareOpFor(ShareAction.clearAndSkip, false),
+          ShareOp.none);
+    });
+
+    test('sending updates when a share exists, creates otherwise', () {
+      expect(LocationSharingService.shareOpFor(ShareAction.sendPrecise, true),
+          ShareOp.update);
+      expect(LocationSharingService.shareOpFor(ShareAction.sendPrecise, false),
+          ShareOp.create);
+      expect(
+          LocationSharingService.shareOpFor(ShareAction.sendApproximate, true),
+          ShareOp.update);
+      expect(
+          LocationSharingService.shareOpFor(ShareAction.sendApproximate, false),
+          ShareOp.create);
+    });
+  });
+
   group('coarse', () {
     test('rounds to ~2 dp', () {
       expect(LocationSharingService.coarse(2.348), closeTo(2.35, 1e-9));

@@ -120,9 +120,10 @@ Delivering on the README's stated future goal.
   dies, unlike a leaked permanent code. *Note:* remote pairing trusts the
   channel you send it over for the peer's key authenticity; in-person QR
   remains the strongest option.
-- **Efficient publish path.** `publish()` does per-contact `getFullList` +
-  update/create — O(N) round trips per tick. Batch the reads and consider a
-  single upsert call per contact.
+- ✅ **Efficient publish path** *(done)*. `publish()` now fetches all my
+  outgoing shares in one query and keys them by recipient, replacing the
+  per-contact `getFullList` (O(contacts) reads → 1). A pure `shareOpFor`
+  decides create/update/delete/none per contact; writes are unchanged.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
 - **Contact management UX.** Rename contacts, see last-seen/stale state clearly,
