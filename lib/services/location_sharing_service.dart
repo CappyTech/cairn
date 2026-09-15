@@ -27,10 +27,78 @@ class ContactLocation {
   });
 }
 
+/// What to do for one contact on a publish tick.
+enum ShareAction {
+  /// Don't touch this contact (e.g. their key changed and isn't re-verified).
+  skip,
+
+  /// Stop sharing and delete any location already shared to them (paused).
+  clearAndSkip,
+
+  /// Share a precise position.
+  sendPrecise,
+
+  /// Share a coarsened (~1 km) position.
+  sendApproximate,
+}
+
 /// Publishes my encrypted location to contacts and receives theirs.
 class LocationSharingService {
   /// Round to ~2 decimal places (~1.1 km) for "approximate" sharing.
-  static double _coarse(double v) => (v * 100).roundToDouble() / 100;
+  static double coarse(double v) => (v * 100).roundToDouble() / 100;
+
+  /// What to do for one contact this tick, given their per-contact `precision`
+  /// and `status`, and the global "approximate only" switch. Pure — unit-tested.
+  static ShareAction shareActionFor({
+    required String precision,
+    required String status,
+    required bool approxOnly,
+  }) {
+    // Key changed and not re-verified: don't publish to a key we don't trust
+    // (existing shares stay as-is, under the old key).
+    if (status == 'key_changed') return ShareAction.skip;
+    // Paused: stop sharing and clear any location already shared to them.
+    if (precision == 'off') return ShareAction.clearAndSkip;
+    return (approxOnly || precision == 'approximate')
+        ? ShareAction.sendApproximate
+        : ShareAction.sendPrecise;
+  }
+
+  /// The location payload to encrypt for a contact. When [approximate], the
+  /// position is coarsened (~1 km) and accuracy is dropped. Pure.
+  static Map<String, dynamic> buildPayload({
+    required double lat,
+    required double lng,
+    double? accuracy,
+    required bool approximate,
+    required String ts,
+  }) {
+    return {
+      'lat': approximate ? coarse(lat) : lat,
+      'lng': approximate ? coarse(lng) : lng,
+      'acc': approximate ? null : accuracy,
+      'approx': approximate,
+      'ts': ts,
+    };
+  }
+
+  /// Build a [ContactLocation] from a decrypted payload [data]. Pure.
+  static ContactLocation contactLocationFrom({
+    required String senderId,
+    required String name,
+    required Map<String, dynamic> data,
+    required String updatedIso,
+  }) {
+    return ContactLocation(
+      senderId: senderId,
+      name: name.isNotEmpty ? name : 'Unnamed device',
+      lat: (data['lat'] as num).toDouble(),
+      lng: (data['lng'] as num).toDouble(),
+      accuracy: (data['acc'] as num?)?.toDouble(),
+      approximate: data['approx'] == true,
+      updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
+    );
+  }
 
   /// Encrypt my position for each paired contact and upsert their share row.
   /// Precision is decided PER CONTACT (their `precision`: precise / approximate /
@@ -51,14 +119,13 @@ class LocationSharingService {
       final peerKey = c.getStringValue('peer_pubkey');
       if (peerId.isEmpty || peerKey.isEmpty) continue;
 
-      // Their key changed and hasn't been re-verified in person — don't publish
-      // to a key we no longer trust. Existing shares stay under the old key.
-      if (c.getStringValue('status') == 'key_changed') continue;
-
-      final precision = c.getStringValue('precision');
-
-      // Paused: stop sharing with them and clear any existing location.
-      if (precision == 'off') {
+      final action = shareActionFor(
+        precision: c.getStringValue('precision'),
+        status: c.getStringValue('status'),
+        approxOnly: approxOnly,
+      );
+      if (action == ShareAction.skip) continue;
+      if (action == ShareAction.clearAndSkip) {
         for (final s in await pb.collection('location_shares').getFullList(
             filter: 'sender = "${me.id}" && recipient = "$peerId"')) {
           await pb.collection('location_shares').delete(s.id);
@@ -66,14 +133,13 @@ class LocationSharingService {
         continue;
       }
 
-      final approximate = approxOnly || precision == 'approximate';
-      final payload = utf8.encode(jsonEncode({
-        'lat': approximate ? _coarse(lat) : lat,
-        'lng': approximate ? _coarse(lng) : lng,
-        'acc': approximate ? null : accuracy,
-        'approx': approximate,
-        'ts': ts,
-      }));
+      final payload = utf8.encode(jsonEncode(buildPayload(
+        lat: lat,
+        lng: lng,
+        accuracy: accuracy,
+        approximate: action == ShareAction.sendApproximate,
+        ts: ts,
+      )));
       final blob = await CryptoService.sealFor(peerKey, payload);
       final body = {'sender': me.id, 'recipient': peerId, 'ciphertext': blob};
       final existing = await pb.collection('location_shares').getFullList(
@@ -110,17 +176,11 @@ class LocationSharingService {
       try {
         final clear = await CryptoService.openSealed(r.getStringValue('ciphertext'));
         final data = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
-        byId[sender] = ContactLocation(
+        byId[sender] = contactLocationFrom(
           senderId: sender,
-          name: names[sender]?.isNotEmpty == true
-              ? names[sender]!
-              : 'Unnamed device',
-          lat: (data['lat'] as num).toDouble(),
-          lng: (data['lng'] as num).toDouble(),
-          accuracy: (data['acc'] as num?)?.toDouble(),
-          approximate: data['approx'] == true,
-          updated: DateTime.tryParse(r.getStringValue('updated'))?.toLocal() ??
-              DateTime.now(),
+          name: names[sender] ?? '',
+          data: data,
+          updatedIso: r.getStringValue('updated'),
         );
       } catch (_) {
         // Undecryptable — ignore.
