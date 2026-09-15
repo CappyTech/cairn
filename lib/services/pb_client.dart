@@ -56,6 +56,18 @@ Future<String> _resolveUrl() async {
   return platformDefaultUrl();
 }
 
+/// Whether [raw] is a usable backend address: a well-formed absolute URL with
+/// an http/https scheme and a host. Pure, so it's unit-tested. Rejects the
+/// common mistakes — a bare IP/host with no scheme ("192.168.1.5:8090"),
+/// gibberish, or an empty host ("http://") — before they get saved and brick
+/// the next launch.
+bool isValidServerUrl(String raw) {
+  final uri = Uri.tryParse(raw.trim());
+  if (uri == null) return false;
+  if (uri.scheme != 'http' && uri.scheme != 'https') return false;
+  return uri.host.isNotEmpty;
+}
+
 /// The user's saved server URL (empty if none set).
 Future<String> savedServerUrl() async =>
     (await _storage.read(key: _urlKey)) ?? '';
