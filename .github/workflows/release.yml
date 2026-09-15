@@ -52,7 +52,10 @@ jobs:
 
   # --------------------------------------------------------------- android ---
   android:
-    if: startsWith(github.ref, 'refs/tags/v')   # only on version tags
+    # Any tag that can trigger this workflow is a version tag (see the `on:`
+    # filter above: `v1.2.3` or bare `1.2.3`), so match all tag refs — otherwise
+    # a bare-semver tag deploys the server but silently skips the Android build.
+    if: startsWith(github.ref, 'refs/tags/')   # only on version tags
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
