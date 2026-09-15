@@ -85,9 +85,14 @@ The things a privacy product cannot ship without.
 - **Real iOS background sharing.** `flutter_background_service` doesn't give
   iOS meaningful background location — evaluate significant-location-change /
   region monitoring, or a platform-channel CLLocationManager path.
-- **Battery-aware background strategy (Android + iOS).** The fixed 2-minute
-  timer is simple but wasteful when stationary. Move toward distance-filtered
-  or significant-change updates; back off when still.
+- ✅ **Battery-aware background strategy (Android)** *(done)*. The background
+  isolate now picks its cadence + GPS accuracy from the **battery level /
+  charging state** (`backgroundStrategy` in `services/bg_strategy.dart`, unit
+  tested): 2 min / high while healthy or charging, 5 min / medium at ≤35%, 10 min
+  / medium at ≤15%. *Deliberately battery-driven, not movement-driven* — a
+  "back off when still" strategy would reintroduce the movement-timing leak that
+  Phase 3 closed, whereas battery level isn't location-correlated. *Still open:*
+  the same for iOS (needs the iOS background path first).
 - **Web hardening or scoping.** The web build authenticates with the same
   key-in-`flutter_secure_storage` model, which is far weaker in a browser.
   Decide whether web stays a read-only/admin surface or gets an explicitly
