@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
 import '../services/pb_client.dart';
 import '../services/auth_service.dart';
@@ -109,11 +110,15 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  void _about() {
+  Future<void> _about() async {
+    // Read the real version at runtime so it always matches the build (CI sets
+    // it from the git tag / run number) instead of a hardcoded literal.
+    final info = await PackageInfo.fromPlatform();
+    if (!mounted) return;
     showAboutDialog(
       context: context,
       applicationName: 'cairn',
-      applicationVersion: '0.1.0 (beta)',
+      applicationVersion: 'Version ${info.version} (${info.buildNumber})',
       applicationIcon: const CairnMark(size: 40),
       applicationLegalese: 'Your location, for the few you trust.\n© CappyLabs',
       children: const [
