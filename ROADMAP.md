@@ -95,11 +95,17 @@ The things a privacy product cannot ship without.
 
 ## Phase 3 — Metadata privacy (the north star)
 
-Delivering on the README's stated future goal.
+Delivering on the README's stated future goal. **Design:
+[`docs/metadata-privacy.md`](docs/metadata-privacy.md)** — threat model, what
+the server sees today, the PocketBase authz tension that shapes the design, and
+a phased plan. Recommended first step: **sealed sender** (drop `sender` from
+`location_shares`, move a signed sender id into the ciphertext) — biggest leak
+reduction with no re-architecture.
 
 - **Reduce the social graph the server can see.** Investigate blinded or
   rotating routing identifiers so `contacts` / `location_shares` don't expose
-  who-shares-with-whom in the clear.
+  who-shares-with-whom in the clear. (See the design doc — this is the hard
+  part, because PocketBase's access rules are written over those relations.)
 - **Minimise timestamp leakage.** `last_seen` and record `updated` times are a
   presence side-channel; consider coarsening, client-derived presence, or
   dropping the server heartbeat.
