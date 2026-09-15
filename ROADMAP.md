@@ -62,14 +62,17 @@ The things a privacy product cannot ship without.
   paused / key-changed), payload coarsening, and the decrypt→parse round trip.
   *Still want:* widget tests for the core screens, and end-to-end coverage of
   the PocketBase-backed paths (currently only the `integration`-tagged test).
-- **Abuse resistance on open endpoints.** `users.create` and `pair_requests`
-  are open by design (no account gate). Add rate limiting / basic anti-spam at
-  the reverse proxy or via PocketBase hooks. **Unsolicited pairing is now
-  closed** at the app layer: `processPendingRequests()` only creates a contact
-  for a request carrying a valid proof-of-scan MAC, so an injected request can't
-  add itself without having scanned the target's QR. (A malicious client could
-  still *write* junk `pair_requests` rows — hence the rate-limiting item — but
-  they no longer become contacts.)
+- **Abuse resistance on open endpoints** *(rate limiting added; verify on
+  server)*. `users.create` and `pair_requests` are open by design (no account
+  gate). A migration enables PocketBase's built-in rate limiter for
+  `users:create` and `pair_requests:create` (with `trustedProxy` set for the
+  real client IP behind Caddy). It's wrapped defensively so it can't halt
+  startup, and was authored without a running PocketBase — **confirm it applied
+  and tune the limits in the Admin UI after deploy.** **Unsolicited pairing is
+  already closed** at the app layer: `processPendingRequests()` only creates a
+  contact for a request carrying a valid proof-of-scan MAC, so an injected
+  request can't add itself without having scanned the target's QR — this rate
+  limit just blunts junk `pair_requests`/account floods at the write layer.
 
 ## Phase 2 — Platform reach
 
