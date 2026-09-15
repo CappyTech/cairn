@@ -42,6 +42,9 @@ enum ShareAction {
   sendApproximate,
 }
 
+/// The database write to perform for one contact this tick.
+enum ShareOp { none, create, update, delete }
+
 /// Publishes my encrypted location to contacts and receives theirs.
 class LocationSharingService {
   /// Round to ~2 decimal places (~1.1 km) for "approximate" sharing.
@@ -62,6 +65,20 @@ class LocationSharingService {
     return (approxOnly || precision == 'approximate')
         ? ShareAction.sendApproximate
         : ShareAction.sendPrecise;
+  }
+
+  /// Given a contact's [action] and whether a share row to them already exists,
+  /// the database write to perform. Pure — unit-tested.
+  static ShareOp shareOpFor(ShareAction action, bool hasExistingShare) {
+    switch (action) {
+      case ShareAction.skip:
+        return ShareOp.none;
+      case ShareAction.clearAndSkip:
+        return hasExistingShare ? ShareOp.delete : ShareOp.none;
+      case ShareAction.sendPrecise:
+      case ShareAction.sendApproximate:
+        return hasExistingShare ? ShareOp.update : ShareOp.create;
+    }
   }
 
   /// The location payload to encrypt for a contact. When [approximate], the
@@ -114,6 +131,14 @@ class LocationSharingService {
     final contacts = await PairingService.myContacts();
     final ts = DateTime.now().toUtc().toIso8601String();
 
+    // Fetch all my outgoing shares once, keyed by recipient, instead of a
+    // per-contact query. One read replaces the previous O(contacts) reads.
+    final existingByRecipient = <String, RecordModel>{};
+    for (final s in await pb.collection('location_shares').getFullList(
+        filter: 'sender = "${me.id}"')) {
+      existingByRecipient[s.getStringValue('recipient')] = s;
+    }
+
     for (final c in contacts) {
       final peerId = c.getStringValue('peer');
       final peerKey = c.getStringValue('peer_pubkey');
@@ -124,30 +149,35 @@ class LocationSharingService {
         status: c.getStringValue('status'),
         approxOnly: approxOnly,
       );
-      if (action == ShareAction.skip) continue;
-      if (action == ShareAction.clearAndSkip) {
-        for (final s in await pb.collection('location_shares').getFullList(
-            filter: 'sender = "${me.id}" && recipient = "$peerId"')) {
-          await pb.collection('location_shares').delete(s.id);
-        }
-        continue;
-      }
+      final existing = existingByRecipient[peerId];
+      final op = shareOpFor(action, existing != null);
 
-      final payload = utf8.encode(jsonEncode(buildPayload(
-        lat: lat,
-        lng: lng,
-        accuracy: accuracy,
-        approximate: action == ShareAction.sendApproximate,
-        ts: ts,
-      )));
-      final blob = await CryptoService.sealFor(peerKey, payload);
-      final body = {'sender': me.id, 'recipient': peerId, 'ciphertext': blob};
-      final existing = await pb.collection('location_shares').getFullList(
-          filter: 'sender = "${me.id}" && recipient = "$peerId"');
-      if (existing.isNotEmpty) {
-        await pb.collection('location_shares').update(existing.first.id, body: body);
-      } else {
-        await pb.collection('location_shares').create(body: body);
+      switch (op) {
+        case ShareOp.none:
+          break;
+        case ShareOp.delete:
+          await pb.collection('location_shares').delete(existing!.id);
+          existingByRecipient.remove(peerId);
+        case ShareOp.create:
+        case ShareOp.update:
+          final payload = utf8.encode(jsonEncode(buildPayload(
+            lat: lat,
+            lng: lng,
+            accuracy: accuracy,
+            approximate: action == ShareAction.sendApproximate,
+            ts: ts,
+          )));
+          final blob = await CryptoService.sealFor(peerKey, payload);
+          final body = {
+            'sender': me.id,
+            'recipient': peerId,
+            'ciphertext': blob
+          };
+          if (op == ShareOp.update) {
+            await pb.collection('location_shares').update(existing!.id, body: body);
+          } else {
+            await pb.collection('location_shares').create(body: body);
+          }
       }
     }
 
