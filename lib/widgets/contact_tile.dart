@@ -24,6 +24,7 @@ class ContactTile extends StatelessWidget {
   final void Function(String precision) onSetPrecision;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
+  final VoidCallback onRename;
 
   const ContactTile({
     super.key,
@@ -34,6 +35,7 @@ class ContactTile extends StatelessWidget {
     required this.onSetPrecision,
     required this.onRemove,
     required this.onRescan,
+    required this.onRename,
   });
 
   static String precLabel(String p) => switch (p) {
@@ -68,12 +70,21 @@ class ContactTile extends StatelessWidget {
                   paused ? Theme.of(context).colorScheme.error : Brand.stone),
         ),
         trailing: PopupMenuButton<String>(
-          onSelected: (v) => v == 'remove' ? onRemove() : onSetPrecision(v),
+          onSelected: (v) => switch (v) {
+            'rename' => onRename(),
+            'remove' => onRemove(),
+            _ => onSetPrecision(v),
+          },
           itemBuilder: (context) => [
             _precItem('precise', 'Precise', Icons.gps_fixed),
             _precItem('approximate', 'Approximate (~1 km)', Icons.blur_on),
             _precItem('off', 'Pause sharing', Icons.pause_circle_outline),
             const PopupMenuDivider(),
+            const PopupMenuItem(
+                value: 'rename',
+                child: ListTile(
+                    leading: Icon(Icons.drive_file_rename_outline),
+                    title: Text('Rename'))),
             const PopupMenuItem(
                 value: 'remove',
                 child: ListTile(
