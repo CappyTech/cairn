@@ -56,10 +56,12 @@ The things a privacy product cannot ship without.
 - ✅ **CI test gate** *(done)*. `ci.yml` runs `flutter analyze` + `flutter test`
   on every PR and non-`main` branch. *(Optional next: add a
   `dart format --set-exit-if-changed` check.)*
-- **Grow the test suite.** Pairing decision + MAC verification and key-change
-  detection are now covered; still want precision/pause behaviour, the
-  subscribe/ingest path in `LocationSharingService`, and widget tests for the
-  core screens.
+- **Grow the test suite** *(ongoing)*. Covered so far: pairing decision + MAC
+  verification, key-change detection, one-time invite expiry, and the
+  location-sharing logic — per-contact share action (precise / approximate /
+  paused / key-changed), payload coarsening, and the decrypt→parse round trip.
+  *Still want:* widget tests for the core screens, and end-to-end coverage of
+  the PocketBase-backed paths (currently only the `integration`-tagged test).
 - **Abuse resistance on open endpoints.** `users.create` and `pair_requests`
   are open by design (no account gate). Add rate limiting / basic anti-spam at
   the reverse proxy or via PocketBase hooks. **Unsolicited pairing is now
