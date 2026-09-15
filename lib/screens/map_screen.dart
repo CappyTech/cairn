@@ -46,6 +46,9 @@ class _MapScreenState extends State<MapScreen> {
 
     try {
       final pos = await LocationService.current();
+      // The fix above can take several seconds; the user may have left the
+      // screen meanwhile. Bail before touching state or the map controller.
+      if (!mounted) return;
       _onPosition(pos, recenter: true);
       setState(() => _loading = false);
 
@@ -56,6 +59,7 @@ class _MapScreenState extends State<MapScreen> {
         if (_lastPos != null) _publish(_lastPos!);
       });
     } catch (e) {
+      if (!mounted) return;
       setState(() {
         _error = e.toString();
         _loading = false;
@@ -65,9 +69,9 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onPosition(Position p, {bool recenter = false}) {
     _lastPos = p;
-    final here = LatLng(p.latitude, p.longitude);
-    if (mounted) setState(() => _me = here);
-    if (recenter) _map.move(here, 14);
+    if (!mounted) return; // moving a disposed MapController throws
+    setState(() => _me = LatLng(p.latitude, p.longitude));
+    if (recenter) _map.move(_me!, 14);
     _publish(p);
   }
 
