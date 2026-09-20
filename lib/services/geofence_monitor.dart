@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'history_service.dart';
 import 'location_sharing_service.dart';
 import 'notification_service.dart';
 import 'places_service.dart';
@@ -135,6 +136,14 @@ class GeofenceMonitor {
     var state = await loadState();
     final alerts = <GeofenceTransition>[];
     for (final c in byId.values) {
+      // Record the contact's position into their history trail (sampled).
+      HistoryService.record(
+        subject: c.senderId,
+        lat: c.lat,
+        lng: c.lng,
+        ts: c.updated,
+        accuracy: c.accuracy,
+      );
       final r = evaluateContact(
         places: places,
         contactId: c.senderId,
@@ -167,6 +176,7 @@ class GeofenceMonitor {
   GeofenceMonitor._();
 
   Future<void> Function()? _unsub;
+  Timer? _flushTimer;
   List<Place> _places = [];
   bool _running = false;
   Future<void> _chain = Future.value(); // serialise overlapping updates
@@ -181,6 +191,9 @@ class GeofenceMonitor {
         // Serialise so two quick updates can't race on the stored state.
         _chain = _chain.then((_) => processLocations(byId, _places));
       });
+      // Persist buffered history points periodically while the app is open.
+      _flushTimer =
+          Timer.periodic(const Duration(minutes: 2), (_) => HistoryService.flush());
     } catch (_) {
       _running = false; // couldn't subscribe (e.g. offline) — allow a retry
     }
@@ -194,6 +207,9 @@ class GeofenceMonitor {
   }
 
   Future<void> stop() async {
+    _flushTimer?.cancel();
+    _flushTimer = null;
+    await HistoryService.flush();
     await _unsub?.call();
     _unsub = null;
     _running = false;

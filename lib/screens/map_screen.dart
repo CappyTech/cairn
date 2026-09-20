@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import '../services/auth_service.dart';
+import '../services/history_service.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/notification_service.dart';
@@ -98,6 +100,17 @@ class _MapScreenState extends State<MapScreen> {
 
   void _onPosition(Position p, {bool recenter = false}) {
     _lastPos = p;
+    // Record my own trail (sampled; the geofence monitor flushes periodically).
+    final me = AuthService.currentUser;
+    if (me != null) {
+      HistoryService.record(
+        subject: me.id,
+        lat: p.latitude,
+        lng: p.longitude,
+        ts: DateTime.now().toUtc(),
+        accuracy: p.accuracy,
+      );
+    }
     if (!mounted) return; // moving a disposed MapController throws
     setState(() => _me = LatLng(p.latitude, p.longitude));
     if (recenter) _map.move(_me!, 14);
