@@ -38,6 +38,19 @@ jobs:
             ghcr.io/cappytech/cairn-server:latest
             ghcr.io/cappytech/cairn-server:${{ github.sha }}
 
+      # Keep the edge's compose file in lock-step with the repo. Without this the
+      # edge copy can drift (e.g. back to a local `build:`), which makes
+      # `docker compose pull` a no-op and every deploy silently ship nothing.
+      - name: Sync compose file to edge
+        uses: appleboy/scp-action@v0.1.7
+        with:
+          host: ${{ secrets.EDGE_SSH_HOST }}
+          username: ${{ secrets.EDGE_SSH_USER }}
+          key: ${{ secrets.EDGE_SSH_KEY }}
+          source: "deploy/docker-compose.yml"
+          target: "/docker/cairn-server/"
+          strip_components: 1   # drop the deploy/ prefix -> docker-compose.yml
+
       - name: Deploy to edge over SSH
         uses: appleboy/ssh-action@v1
         with:
@@ -47,7 +60,9 @@ jobs:
           script: |
             cd /docker/cairn-server
             docker compose pull
-            docker compose up -d
+            # --force-recreate so a new :latest digest always rolls the
+            # container even if compose thinks nothing changed.
+            docker compose up -d --force-recreate
             docker image prune -f
 
   # --------------------------------------------------------------- android ---
