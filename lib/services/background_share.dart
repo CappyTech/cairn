@@ -144,7 +144,10 @@ void onStart(ServiceInstance service) async {
         locationSettings: const LocationSettings(accuracy: LocationAccuracy.high),
       );
       await LocationSharingService.publish(
-          lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
+          lat: pos.latitude,
+          lng: pos.longitude,
+          accuracy: pos.accuracy,
+          speed: pos.speed);
     } catch (_) {
       // offline / no permission / no contacts — skip this tick.
     }

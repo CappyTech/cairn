@@ -5,6 +5,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
+import '../services/motion_activity.dart';
 import '../theme/brand.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
@@ -23,6 +24,7 @@ class _MapScreenState extends State<MapScreen> {
 
   LatLng? _me;
   Position? _lastPos;
+  MotionActivity _myActivity = MotionActivity.unknown;
   Map<String, ContactLocation> _contacts = {};
   String? _error;
   bool _loading = true;
@@ -73,7 +75,10 @@ class _MapScreenState extends State<MapScreen> {
   void _onPosition(Position p, {bool recenter = false}) {
     _lastPos = p;
     if (!mounted) return; // moving a disposed MapController throws
-    setState(() => _me = LatLng(p.latitude, p.longitude));
+    setState(() {
+      _me = LatLng(p.latitude, p.longitude);
+      _myActivity = MotionActivity.fromSpeed(p.speed);
+    });
     if (recenter) _map.move(_me!, 14);
     // Note: no publish here. Shares go out on a fixed 30s cadence (the
     // heartbeat), not per movement, so the server can't infer our movement /
@@ -84,7 +89,10 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> _publish(Position p) async {
     try {
       await LocationSharingService.publish(
-          lat: p.latitude, lng: p.longitude, accuracy: p.accuracy);
+          lat: p.latitude,
+          lng: p.longitude,
+          accuracy: p.accuracy,
+          speed: p.speed);
     } catch (_) {/* offline / no contacts — fine */}
   }
 
@@ -132,13 +140,10 @@ class _MapScreenState extends State<MapScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // A small dot echoes the pin colour → ties chip to marker.
-                  Container(
-                    width: 7,
-                    height: 7,
-                    margin: const EdgeInsets.only(right: 5),
-                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
-                  ),
+                  // Leading glyph = their motion state (idle/walking/…); if it's
+                  // unknown, fall back to a small dot in the presence colour.
+                  _statusLeading(c.activity, color),
+                  const SizedBox(width: 5),
                   Flexible(
                     child: Text('${c.name} · $label',
                         style: const TextStyle(
@@ -183,11 +188,69 @@ class _MapScreenState extends State<MapScreen> {
         ),
       );
 
+  /// The glyph for a motion state, or null when it's unknown.
+  static IconData? _activityIcon(MotionActivity a) {
+    switch (a) {
+      case MotionActivity.idle:
+        return Icons.person_outline;
+      case MotionActivity.walking:
+        return Icons.directions_walk;
+      case MotionActivity.driving:
+        return Icons.directions_car;
+      case MotionActivity.train:
+        return Icons.train;
+      case MotionActivity.plane:
+        return Icons.flight;
+      case MotionActivity.unknown:
+        return null;
+    }
+  }
+
+  /// A contact chip's leading glyph: their motion state if known, else a small
+  /// presence-coloured dot (so an older sender without a state still reads).
+  Widget _statusLeading(MotionActivity a, Color presence) {
+    final icon = _activityIcon(a);
+    if (icon != null) return Icon(icon, size: 13, color: Brand.slate);
+    return Container(
+      width: 7,
+      height: 7,
+      decoration: BoxDecoration(color: presence, shape: BoxShape.circle),
+    );
+  }
+
+  /// My own motion state, shown in the app bar while I'm moving.
+  Widget _youPill(MotionActivity a) => Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+        decoration: BoxDecoration(
+          color: Brand.lichen.withValues(alpha: 0.20),
+          borderRadius: BorderRadius.circular(20),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(_activityIcon(a), size: 15, color: Brand.slate),
+            const SizedBox(width: 5),
+            Text("You're ${a.label}",
+                style: const TextStyle(
+                    color: Brand.slate,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ),
+      );
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
         title: Text('Map · ${_contacts.length} sharing'),
+        actions: [
+          if (_myActivity.isMoving)
+            Padding(
+              padding: const EdgeInsets.only(right: 12),
+              child: Center(child: _youPill(_myActivity)),
+            ),
+        ],
       ),
       body: Stack(
         children: [

@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'pairing_service.dart';
 import 'crypto_service.dart';
+import 'motion_activity.dart';
 import 'nickname_service.dart';
 import 'prefs.dart';
 
@@ -15,6 +16,7 @@ class ContactLocation {
   final double lng;
   final double? accuracy;
   final bool approximate; // sender shared a rounded (coarse) position
+  final MotionActivity activity; // their motion state (idle/walking/…)
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -24,6 +26,7 @@ class ContactLocation {
     required this.lng,
     this.accuracy,
     this.approximate = false,
+    this.activity = MotionActivity.unknown,
     required this.updated,
   });
 }
@@ -83,11 +86,15 @@ class LocationSharingService {
   }
 
   /// The location payload to encrypt for a contact. When [approximate], the
-  /// position is coarsened (~1 km) and accuracy is dropped. Pure.
+  /// position is coarsened (~1 km) and accuracy is dropped. The motion state is
+  /// derived from [speed] (m/s) and sent as a coarse bucket ('act'), not a raw
+  /// speed — so no finer movement data than the state itself leaves the device.
+  /// Pure.
   static Map<String, dynamic> buildPayload({
     required double lat,
     required double lng,
     double? accuracy,
+    double? speed,
     required bool approximate,
     required String ts,
   }) {
@@ -96,6 +103,7 @@ class LocationSharingService {
       'lng': approximate ? coarse(lng) : lng,
       'acc': approximate ? null : accuracy,
       'approx': approximate,
+      'act': MotionActivity.fromSpeed(speed).wire,
       'ts': ts,
     };
   }
@@ -114,6 +122,7 @@ class LocationSharingService {
       lng: (data['lng'] as num).toDouble(),
       accuracy: (data['acc'] as num?)?.toDouble(),
       approximate: data['approx'] == true,
+      activity: MotionActivity.fromWire(data['act']),
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }
@@ -125,6 +134,7 @@ class LocationSharingService {
     required double lat,
     required double lng,
     double? accuracy,
+    double? speed,
   }) async {
     final me = AuthService.currentUser;
     if (me == null) return;
@@ -165,6 +175,7 @@ class LocationSharingService {
             lat: lat,
             lng: lng,
             accuracy: accuracy,
+            speed: speed,
             approximate: action == ShareAction.sendApproximate,
             ts: ts,
           )));
