@@ -161,23 +161,48 @@ class _MapScreenState extends State<MapScreen> {
       final (color, label) = _presence(c.updated);
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
-        width: 120,
-        height: 70,
+        width: 140,
+        height: 76,
+        alignment: Alignment.topCenter,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
+            // Name + freshness chip, on-brand: slate text on a soft card.
             Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
               decoration: BoxDecoration(
                 color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: const [BoxShadow(blurRadius: 3, color: Colors.black26)],
+                borderRadius: BorderRadius.circular(10),
+                boxShadow: const [
+                  BoxShadow(blurRadius: 4, color: Colors.black26, offset: Offset(0, 1)),
+                ],
               ),
-              child: Text('${c.name} · $label',
-                  style: const TextStyle(fontSize: 11),
-                  overflow: TextOverflow.ellipsis),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // A small dot echoes the pin colour → ties chip to marker.
+                  Container(
+                    width: 7,
+                    height: 7,
+                    margin: const EdgeInsets.only(right: 5),
+                    decoration: BoxDecoration(color: color, shape: BoxShape.circle),
+                  ),
+                  Flexible(
+                    child: Text('${c.name} · $label',
+                        style: const TextStyle(
+                            fontSize: 11,
+                            color: Brand.slate,
+                            fontWeight: FontWeight.w500),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                ],
+              ),
             ),
-            Icon(Icons.location_on, color: color, size: 34),
+            const SizedBox(height: 2),
+            // Teardrop pin with a white halo so it reads on the pale basemap.
+            Icon(Icons.location_on, color: color, size: 36, shadows: const [
+              Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
+            ]),
           ],
         ),
       ));
@@ -185,14 +210,26 @@ class _MapScreenState extends State<MapScreen> {
     if (_me != null) {
       markers.add(Marker(
         point: _me!,
-        width: 44,
-        height: 44,
-        child:
-            const Icon(Icons.my_location, color: Brand.slate, size: 34),
+        width: 28,
+        height: 28,
+        child: _meDot(),
       ));
     }
     return markers;
   }
+
+  /// This device's own position: a slate dot with a white ring — a calm,
+  /// on-brand take on the familiar "you are here" marker.
+  Widget _meDot() => Container(
+        decoration: BoxDecoration(
+          color: Brand.slate,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 3),
+          boxShadow: const [
+            BoxShadow(blurRadius: 4, color: Colors.black38, offset: Offset(0, 1)),
+          ],
+        ),
+      );
 
   @override
   Widget build(BuildContext context) {
@@ -209,13 +246,21 @@ class _MapScreenState extends State<MapScreen> {
               initialZoom: _me == null ? 3 : 14,
             ),
             children: [
+              // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
+              // — calmer and far less visually loud than raw OSM tiles, so
+              // contacts' pins are what stands out. This layer already carries
+              // its own place labels. Key-less; for a fully self-hosted stack,
+              // point this at your own tile server instead.
               TileLayer(
-                urlTemplate: 'https://tile.openstreetmap.org/{z}/{x}/{y}.png',
-                userAgentPackageName: 'com.example.my_app',
+                urlTemplate:
+                    'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                userAgentPackageName: 'uk.cappylabs.cairn',
+                maxNativeZoom: 16,
               ),
               MarkerLayer(markers: _markers()),
               const RichAttributionWidget(
                 attributions: [
+                  TextSourceAttribution('© Esri'),
                   TextSourceAttribution('© OpenStreetMap contributors'),
                 ],
               ),
