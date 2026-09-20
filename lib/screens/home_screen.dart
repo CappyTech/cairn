@@ -9,6 +9,7 @@ import '../services/background_share.dart';
 import '../services/notification_service.dart';
 import '../services/nickname_service.dart';
 import '../services/geofence_monitor.dart';
+import '../services/history_policy.dart';
 import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
@@ -59,6 +60,7 @@ class _HomeScreenState extends State<HomeScreen> {
     // Watch for contacts arriving at / leaving my places, app-wide (not just on
     // the map). Safe to call repeatedly — it starts a single subscription.
     GeofenceMonitor.instance.start();
+    _checkHistoryPolicy();
     await _refresh();
     // Live: reciprocate the instant someone scans my code, and let the user
     // know a new contact connected (a local, content-free notification).
@@ -73,6 +75,47 @@ class _HomeScreenState extends State<HomeScreen> {
       }
       await _refresh();
     });
+  }
+
+  /// On connecting to a server, honour its history-retention policy: sync
+  /// location history only if the user agrees to how long it's kept. Re-prompts
+  /// if the policy changed since they last answered.
+  Future<void> _checkHistoryPolicy() async {
+    final result = await HistoryPolicy.evaluate();
+    if (!mounted || result.state != HistoryPolicyState.needsConsent) return;
+    final days = result.serverDays;
+    final kept = days <= 0
+        ? 'This server keeps your location history for as long as you use it '
+            '(no automatic deletion).'
+        : 'This server keeps your location history for $days '
+            '${days == 1 ? 'day' : 'days'}, then deletes it automatically.';
+    final agree = await showDialog<bool>(
+      context: context,
+      barrierDismissible: false,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.history),
+        title: const Text('Keep location history?'),
+        content: Text(
+          '$kept\n\n'
+          "Your history is end-to-end encrypted — only you can read it. It's "
+          'used for the History & trips view. You can change or clear it any '
+          'time, and you can keep less than the server does in History settings.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Not now')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Agree')),
+        ],
+      ),
+    );
+    if (agree == true) {
+      await HistoryPolicy.agree(days);
+    } else {
+      await HistoryPolicy.decline(days);
+    }
   }
 
   Future<void> _refresh() async {

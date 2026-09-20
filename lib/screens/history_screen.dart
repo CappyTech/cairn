@@ -2,10 +2,12 @@ import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import '../services/auth_service.dart';
+import '../services/history_policy.dart';
 import '../services/history_service.dart';
 import '../services/nickname_service.dart';
 import '../services/pairing_service.dart';
 import '../services/places_service.dart';
+import '../services/prefs.dart';
 import '../theme/brand.dart';
 
 /// A person whose history I can view: me, or a paired contact.
@@ -152,6 +154,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
       appBar: AppBar(
         title: const Text('History'),
         actions: [
+          IconButton(
+            tooltip: 'Retention settings',
+            icon: const Icon(Icons.tune),
+            onPressed: _retentionSettings,
+          ),
           if (_subjectId != null && _days.isNotEmpty)
             IconButton(
               tooltip: 'Clear this person\'s history',
@@ -411,6 +418,59 @@ class _HistoryScreenState extends State<HistoryScreen> {
             coordinates: coords, padding: const EdgeInsets.all(60)));
       }
     } catch (_) {}
+  }
+
+  /// Let the user keep *less* history than the server does. Options are capped
+  /// by the server's own policy (you can't keep more than it stores).
+  Future<void> _retentionSettings() async {
+    final current = await Prefs.historyLocalRetentionDays();
+    final serverDays = HistoryPolicy.serverDays;
+    // null = follow server; 0 = keep all (only offered if the server keeps all).
+    final options = <({String label, int? value})>[
+      (label: 'Follow server', value: null),
+      if (serverDays == 0) (label: 'Keep everything', value: 0),
+      (label: 'Last 90 days', value: 90),
+      (label: 'Last 30 days', value: 30),
+      (label: 'Last 7 days', value: 7),
+    ];
+    if (!mounted) return;
+    final picked = await showDialog<({String label, int? value})>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Keep history for'),
+        children: [
+          Padding(
+            padding: const EdgeInsets.fromLTRB(24, 0, 24, 12),
+            child: Text(
+              serverDays == 0
+                  ? 'This server keeps everything. Choose a shorter window to '
+                      'auto-delete your older history on this device\'s account.'
+                  : 'This server keeps $serverDays days. You can keep less.',
+              style: const TextStyle(color: Brand.stone, fontSize: 13),
+            ),
+          ),
+          for (final o in options)
+            ListTile(
+              leading: Icon(
+                o.value == current
+                    ? Icons.radio_button_checked
+                    : Icons.radio_button_unchecked,
+                color: o.value == current ? Brand.lichen : Brand.stone,
+              ),
+              title: Text(o.label),
+              onTap: () => Navigator.pop(context, o),
+            ),
+        ],
+      ),
+    );
+    if (picked == null) return;
+    await Prefs.setHistoryLocalRetentionDays(picked.value);
+    await HistoryPolicy.applyLocalChange();
+    await _loadDaysThenLatest();
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Keeping history: ${picked.label.toLowerCase()}')));
+    }
   }
 
   Future<void> _confirmClear() async {

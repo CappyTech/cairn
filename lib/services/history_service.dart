@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'crypto_service.dart';
 import 'places_service.dart';
+import 'prefs.dart';
 
 /// One recorded position in a subject's trail.
 class HistoryPoint {
@@ -73,6 +74,11 @@ class HistoryService {
   static final Map<String, List<HistoryPoint>> _buffer = {};
   static final Map<String, HistoryPoint> _lastAt = {};
 
+  /// Whether history recording/sync is allowed on the current server. Off until
+  /// the user has agreed to the server's retention policy (see [HistoryPolicy]).
+  /// While off, [record] no-ops, so nothing is buffered or uploaded.
+  static bool recordingEnabled = false;
+
   /// The UTC calendar-day key ("YYYY-MM-DD") a timestamp belongs to.
   static String dayKey(DateTime t) {
     final u = t.toUtc();
@@ -90,6 +96,7 @@ class HistoryService {
     required DateTime ts,
     double? accuracy,
   }) {
+    if (!recordingEnabled) return; // no consent for this server yet
     final last = _lastAt[subject];
     if (last != null) {
       final dt = ts.difference(last.t).abs();
@@ -234,6 +241,76 @@ class HistoryService {
     }
     _buffer.remove(subject);
     _lastAt.remove(subject);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Retention policy — the server advertises a window; the user may tighten it;
+  // the client prunes to the effective window. Pure helpers are unit-tested.
+  // ---------------------------------------------------------------------------
+
+  /// The server's advertised retention (days; 0 = keep everything). Read from
+  /// the public `server_config` singleton. Best-effort: 0 (keep all) if the
+  /// config is missing or unreachable.
+  static Future<int> fetchServerRetentionDays() async {
+    try {
+      final rec =
+          await pb.collection('server_config').getFirstListItem('');
+      final v = rec.getIntValue('history_retention_days');
+      return v < 0 ? 0 : v;
+    } catch (_) {
+      return 0;
+    }
+  }
+
+  /// The effective retention window from the server's policy and the user's
+  /// optional local override. 0 means "keep everything"; treating 0 as infinity,
+  /// the effective window is the *smallest* finite limit (keep less = more
+  /// private). Pure.
+  static int effectiveRetentionDays(int serverDays, int? localDays) {
+    final limits = [serverDays, localDays ?? 0].where((d) => d > 0).toList();
+    if (limits.isEmpty) return 0; // both unlimited → keep all
+    return limits.reduce((a, b) => a < b ? a : b);
+  }
+
+  /// Whether the user must be (re)asked to agree to the server's policy: never
+  /// asked, or the policy changed since they last answered. A prior *decline*
+  /// still stands for the same policy value, but a changed policy re-prompts.
+  /// Pure.
+  static bool consentNeeded({required int serverDays, HistoryConsent? stored}) {
+    if (stored == null) return true;
+    return stored.days != serverDays;
+  }
+
+  /// Which of [existingDays] ("YYYY-MM-DD") fall outside a [keepDays]-day window
+  /// ending [todayUtc] (inclusive), and so should be pruned. 0/negative keepDays
+  /// = keep everything. Pure (ISO date strings sort chronologically).
+  static List<String> daysToPrune(
+      List<String> existingDays, int keepDays, DateTime todayUtc) {
+    if (keepDays <= 0) return [];
+    final cutoff = DateTime.utc(todayUtc.year, todayUtc.month, todayUtc.day)
+        .subtract(Duration(days: keepDays - 1));
+    final cutoffKey = dayKey(cutoff);
+    return [for (final d in existingDays) if (d.compareTo(cutoffKey) < 0) d];
+  }
+
+  /// Delete my history rows older than the [keepDays] window (all subjects).
+  /// No-op when keeping everything. Best-effort.
+  static Future<void> pruneOldDays(int keepDays) async {
+    if (keepDays <= 0) return;
+    final me = AuthService.currentUser;
+    if (me == null) return;
+    final now = DateTime.now().toUtc();
+    final cutoff = DateTime.utc(now.year, now.month, now.day)
+        .subtract(Duration(days: keepDays - 1));
+    final cutoffKey = dayKey(cutoff);
+    try {
+      final rows = await pb.collection(_collection).getFullList(
+            filter: 'owner = "${me.id}" && day < "$cutoffKey"',
+          );
+      for (final r in rows) {
+        await pb.collection(_collection).delete(r.id);
+      }
+    } catch (_) {/* best-effort */}
   }
 
   // ---------------------------------------------------------------------------

@@ -1,4 +1,19 @@
+import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+
+/// A viewer's stored answer to a server's history-retention policy.
+class HistoryConsent {
+  final int days; // the retention window (days) the choice was made against; 0 = keep all
+  final bool declined; // true = user declined to sync history to this server
+
+  const HistoryConsent({required this.days, required this.declined});
+
+  Map<String, dynamic> toJson() => {'days': days, 'declined': declined};
+  static HistoryConsent fromJson(Map<String, dynamic> j) => HistoryConsent(
+        days: (j['days'] as num?)?.toInt() ?? 0,
+        declined: j['declined'] == true,
+      );
+}
 
 /// Small on-device preferences.
 class Prefs {
@@ -17,4 +32,48 @@ class Prefs {
   static Future<String?> name() async => _s.read(key: 'display_name');
   static Future<void> setName(String v) async =>
       _s.write(key: 'display_name', value: v);
+
+  // --- Location history retention ---------------------------------------------
+
+  /// The user's answer to a server's history-retention policy, per server URL
+  /// (history syncs only to a server whose policy they've agreed to). Null until
+  /// they've been asked for that server.
+  static Future<HistoryConsent?> historyConsent(String serverUrl) async {
+    final map = await _consentMap();
+    final v = map[serverUrl];
+    return v == null ? null : HistoryConsent.fromJson(v);
+  }
+
+  static Future<void> setHistoryConsent(
+      String serverUrl, HistoryConsent consent) async {
+    final map = await _consentMap();
+    map[serverUrl] = consent.toJson();
+    await _s.write(key: 'history_consent_v1', value: jsonEncode(map));
+  }
+
+  static Future<Map<String, dynamic>> _consentMap() async {
+    final raw = await _s.read(key: 'history_consent_v1');
+    if (raw == null || raw.isEmpty) return {};
+    try {
+      return (jsonDecode(raw) as Map<String, dynamic>);
+    } catch (_) {
+      return {};
+    }
+  }
+
+  /// The user's optional local retention override (days; 0 = keep all). Null =
+  /// follow the server's policy. Lets a user keep *less* than the server does.
+  static Future<int?> historyLocalRetentionDays() async {
+    final v = await _s.read(key: 'history_local_retention');
+    if (v == null || v.isEmpty) return null;
+    return int.tryParse(v);
+  }
+
+  static Future<void> setHistoryLocalRetentionDays(int? days) async {
+    if (days == null) {
+      await _s.delete(key: 'history_local_retention');
+    } else {
+      await _s.write(key: 'history_local_retention', value: days.toString());
+    }
+  }
 }
