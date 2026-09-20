@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'pairing_service.dart';
 import 'crypto_service.dart';
+import 'motion_activity.dart';
 import 'nickname_service.dart';
 import 'prefs.dart';
 
@@ -15,6 +16,8 @@ class ContactLocation {
   final double lng;
   final double? accuracy;
   final bool approximate; // sender shared a rounded (coarse) position
+  final MotionActivity activity; // their motion state (idle/walking/…)
+  final double? speedMps; // their speed in m/s (only when sharing precisely)
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -24,6 +27,8 @@ class ContactLocation {
     required this.lng,
     this.accuracy,
     this.approximate = false,
+    this.activity = MotionActivity.unknown,
+    this.speedMps,
     required this.updated,
   });
 }
@@ -83,11 +88,16 @@ class LocationSharingService {
   }
 
   /// The location payload to encrypt for a contact. When [approximate], the
-  /// position is coarsened (~1 km) and accuracy is dropped. Pure.
+  /// position is coarsened (~1 km), accuracy is dropped, and the exact [speed]
+  /// is withheld — only the coarse motion bucket ('act') is sent, so an
+  /// approximate share never reveals a precise speed. A precise share includes
+  /// the raw speed ('spd', m/s) as well, for contacts to display. All of this
+  /// is inside the E2E-encrypted blob, so the server reads none of it. Pure.
   static Map<String, dynamic> buildPayload({
     required double lat,
     required double lng,
     double? accuracy,
+    double? speed,
     required bool approximate,
     required String ts,
   }) {
@@ -96,6 +106,8 @@ class LocationSharingService {
       'lng': approximate ? coarse(lng) : lng,
       'acc': approximate ? null : accuracy,
       'approx': approximate,
+      'act': MotionActivity.fromSpeed(speed).wire,
+      'spd': approximate ? null : speed,
       'ts': ts,
     };
   }
@@ -114,6 +126,8 @@ class LocationSharingService {
       lng: (data['lng'] as num).toDouble(),
       accuracy: (data['acc'] as num?)?.toDouble(),
       approximate: data['approx'] == true,
+      activity: MotionActivity.fromWire(data['act']),
+      speedMps: (data['spd'] as num?)?.toDouble(),
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }
@@ -125,6 +139,7 @@ class LocationSharingService {
     required double lat,
     required double lng,
     double? accuracy,
+    double? speed,
   }) async {
     final me = AuthService.currentUser;
     if (me == null) return;
@@ -165,6 +180,7 @@ class LocationSharingService {
             lat: lat,
             lng: lng,
             accuracy: accuracy,
+            speed: speed,
             approximate: action == ShareAction.sendApproximate,
             ts: ts,
           )));
