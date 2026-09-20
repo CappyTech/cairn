@@ -6,6 +6,8 @@ import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/motion_activity.dart';
+import '../services/prefs.dart';
+import '../services/speed_format.dart';
 import '../theme/brand.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
@@ -28,6 +30,7 @@ class _MapScreenState extends State<MapScreen> {
   Map<String, ContactLocation> _contacts = {};
   String? _error;
   bool _loading = true;
+  bool _miles = false; // speed unit: mph vs km/h (loaded from prefs)
 
   StreamSubscription<Position>? _posSub;
   Future<void> Function()? _unsub;
@@ -36,7 +39,24 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _loadUnit();
     _start();
+  }
+
+  /// Load the saved speed unit, or default from the device's locale the first
+  /// time (miles where the road uses mph, km/h elsewhere).
+  Future<void> _loadUnit() async {
+    final saved = await Prefs.speedUnit();
+    final miles = saved != null
+        ? saved == 'mph'
+        : SpeedUnit.defaultMilesForCountry(
+            WidgetsBinding.instance.platformDispatcher.locale.countryCode);
+    if (mounted) setState(() => _miles = miles);
+  }
+
+  void _toggleUnit() {
+    setState(() => _miles = !_miles);
+    Prefs.setSpeedUnit(_miles ? 'mph' : 'kmh');
   }
 
   Future<void> _start() async {
@@ -118,10 +138,17 @@ class _MapScreenState extends State<MapScreen> {
   List<Marker> _markers() {
     final markers = <Marker>[];
     for (final c in _contacts.values) {
-      final (color, label) = _presence(c.updated);
+      final (color, presenceLabel) = _presence(c.updated);
+      // While they're live and moving, show their speed; otherwise fall back to
+      // how long ago they were last seen. Speed is only present on a precise
+      // share (an approximate share sends the state but withholds exact speed).
+      final live = DateTime.now().difference(c.updated).inMinutes < 2;
+      final label = (live && c.activity.isMoving && c.speedMps != null)
+          ? SpeedUnit.format(c.speedMps, miles: _miles)
+          : presenceLabel;
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
-        width: 140,
+        width: 190,
         height: 76,
         alignment: Alignment.topCenter,
         child: Column(
@@ -218,25 +245,45 @@ class _MapScreenState extends State<MapScreen> {
     );
   }
 
-  /// My own motion state, shown in the app bar while I'm moving.
-  Widget _youPill(MotionActivity a) => Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
-        decoration: BoxDecoration(
-          color: Brand.lichen.withValues(alpha: 0.20),
-          borderRadius: BorderRadius.circular(20),
+  /// My own motion state + speed, shown in the app bar while I'm moving. Tapping
+  /// it switches mph ⇄ km/h (and the choice sticks for everyone's speeds).
+  Widget _youPill(MotionActivity a) => InkWell(
+        onTap: _toggleUnit,
+        borderRadius: BorderRadius.circular(20),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+          decoration: BoxDecoration(
+            color: Brand.lichen.withValues(alpha: 0.20),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon carries the state (car/train/plane); text is my speed. Kept
+              // compact so the app-bar title isn't squeezed.
+              Icon(_activityIcon(a), size: 15, color: Brand.slate),
+              const SizedBox(width: 5),
+              Text(SpeedUnit.format(_lastPos?.speed, miles: _miles),
+                  style: const TextStyle(
+                      color: Brand.slate,
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600)),
+            ],
+          ),
         ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(_activityIcon(a), size: 15, color: Brand.slate),
-            const SizedBox(width: 5),
-            Text("You're ${a.label}",
-                style: const TextStyle(
-                    color: Brand.slate,
-                    fontSize: 12,
-                    fontWeight: FontWeight.w600)),
-          ],
+      );
+
+  /// Standalone mph ⇄ km/h switch, shown in the app bar when I'm not moving (so
+  /// the unit is still changeable when there's no speed pill to tap).
+  Widget _unitToggle() => TextButton(
+        onPressed: _toggleUnit,
+        style: TextButton.styleFrom(
+          foregroundColor: Brand.slate,
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          minimumSize: const Size(0, 0),
         ),
+        child: Text(SpeedUnit.label(miles: _miles),
+            style: const TextStyle(fontWeight: FontWeight.w600)),
       );
 
   @override
@@ -245,11 +292,13 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: Text('Map · ${_contacts.length} sharing'),
         actions: [
-          if (_myActivity.isMoving)
-            Padding(
-              padding: const EdgeInsets.only(right: 12),
-              child: Center(child: _youPill(_myActivity)),
-            ),
+          // One control: the tappable speed pill while moving, otherwise a
+          // plain unit switch — so the app bar keeps room for the title.
+          Center(
+              child: _myActivity.isMoving
+                  ? _youPill(_myActivity)
+                  : _unitToggle()),
+          const SizedBox(width: 8),
         ],
       ),
       body: Stack(

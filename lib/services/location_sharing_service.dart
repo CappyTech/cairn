@@ -17,6 +17,7 @@ class ContactLocation {
   final double? accuracy;
   final bool approximate; // sender shared a rounded (coarse) position
   final MotionActivity activity; // their motion state (idle/walking/…)
+  final double? speedMps; // their speed in m/s (only when sharing precisely)
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -27,6 +28,7 @@ class ContactLocation {
     this.accuracy,
     this.approximate = false,
     this.activity = MotionActivity.unknown,
+    this.speedMps,
     required this.updated,
   });
 }
@@ -86,10 +88,11 @@ class LocationSharingService {
   }
 
   /// The location payload to encrypt for a contact. When [approximate], the
-  /// position is coarsened (~1 km) and accuracy is dropped. The motion state is
-  /// derived from [speed] (m/s) and sent as a coarse bucket ('act'), not a raw
-  /// speed — so no finer movement data than the state itself leaves the device.
-  /// Pure.
+  /// position is coarsened (~1 km), accuracy is dropped, and the exact [speed]
+  /// is withheld — only the coarse motion bucket ('act') is sent, so an
+  /// approximate share never reveals a precise speed. A precise share includes
+  /// the raw speed ('spd', m/s) as well, for contacts to display. All of this
+  /// is inside the E2E-encrypted blob, so the server reads none of it. Pure.
   static Map<String, dynamic> buildPayload({
     required double lat,
     required double lng,
@@ -104,6 +107,7 @@ class LocationSharingService {
       'acc': approximate ? null : accuracy,
       'approx': approximate,
       'act': MotionActivity.fromSpeed(speed).wire,
+      'spd': approximate ? null : speed,
       'ts': ts,
     };
   }
@@ -123,6 +127,7 @@ class LocationSharingService {
       accuracy: (data['acc'] as num?)?.toDouble(),
       approximate: data['approx'] == true,
       activity: MotionActivity.fromWire(data['act']),
+      speedMps: (data['spd'] as num?)?.toDouble(),
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }

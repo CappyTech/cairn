@@ -17,4 +17,10 @@ class Prefs {
   static Future<String?> name() async => _s.read(key: 'display_name');
   static Future<void> setName(String v) async =>
       _s.write(key: 'display_name', value: v);
+
+  /// Preferred speed unit on the map: 'mph' or 'kmh'. Null until the user picks
+  /// one — callers then default from the device's locale.
+  static Future<String?> speedUnit() async => _s.read(key: 'speed_unit');
+  static Future<void> setSpeedUnit(String v) async =>
+      _s.write(key: 'speed_unit', value: v);
 }
