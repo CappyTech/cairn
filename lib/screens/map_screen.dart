@@ -6,6 +6,7 @@ import 'package:geolocator/geolocator.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/notification_service.dart';
+import '../services/places_service.dart';
 import '../services/presence.dart';
 import '../theme/brand.dart';
 
@@ -26,6 +27,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _me;
   Position? _lastPos;
   Map<String, ContactLocation> _contacts = {};
+  List<Place> _places = [];
   String? _error;
   bool _loading = true;
 
@@ -43,7 +45,17 @@ class _MapScreenState extends State<MapScreen> {
   @override
   void initState() {
     super.initState();
+    _loadPlaces();
     _start();
+  }
+
+  /// My places, shown as labelled circles and used to tag a contact as "at
+  /// Home". Best-effort — the map works fine without them.
+  Future<void> _loadPlaces() async {
+    try {
+      final places = await PlacesService.list();
+      if (mounted) setState(() => _places = places);
+    } catch (_) {}
   }
 
   Future<void> _start() async {
@@ -155,13 +167,56 @@ class _MapScreenState extends State<MapScreen> {
     return (Colors.grey, '${age.inDays}d ago');
   }
 
+  /// My places drawn as soft lichen circles at their true radius.
+  List<CircleMarker> _placeCircles() => [
+        for (final p in _places)
+          CircleMarker(
+            point: LatLng(p.lat, p.lng),
+            radius: p.radiusMeters,
+            useRadiusInMeter: true,
+            color: Brand.lichen.withValues(alpha: 0.12),
+            borderColor: Brand.lichen.withValues(alpha: 0.7),
+            borderStrokeWidth: 1.5,
+          ),
+      ];
+
+  /// A small name label at the centre of each place.
+  List<Marker> _placeMarkers() => [
+        for (final p in _places)
+          Marker(
+            point: LatLng(p.lat, p.lng),
+            width: 120,
+            height: 22,
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Icon(Icons.place, size: 13, color: Brand.lichen),
+                const SizedBox(width: 3),
+                Flexible(
+                  child: Text(p.name,
+                      style: const TextStyle(
+                          fontSize: 11,
+                          color: Brand.slate,
+                          fontWeight: FontWeight.w600),
+                      overflow: TextOverflow.ellipsis),
+                ),
+              ],
+            ),
+          ),
+      ];
+
   List<Marker> _markers() {
     final markers = <Marker>[];
     for (final c in _contacts.values) {
-      final (color, label) = _presence(c.updated);
+      final (color, presenceLabel) = _presence(c.updated);
+      // If they're inside one of my places, say so ("· at Home").
+      final at = PlacesService.placeContaining(_places, c.lat, c.lng);
+      final label =
+          at != null ? '$presenceLabel · at ${at.name}' : presenceLabel;
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
-        width: 140,
+        width: 190,
         height: 76,
         alignment: Alignment.topCenter,
         child: Column(
@@ -257,6 +312,8 @@ class _MapScreenState extends State<MapScreen> {
                 userAgentPackageName: 'uk.cappylabs.cairn',
                 maxNativeZoom: 16,
               ),
+              CircleLayer(circles: _placeCircles()),
+              MarkerLayer(markers: _placeMarkers()),
               MarkerLayer(markers: _markers()),
               const RichAttributionWidget(
                 attributions: [

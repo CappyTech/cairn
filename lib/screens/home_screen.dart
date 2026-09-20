@@ -8,10 +8,12 @@ import '../services/pairing_service.dart';
 import '../services/background_share.dart';
 import '../services/notification_service.dart';
 import '../services/nickname_service.dart';
+import '../services/geofence_monitor.dart';
 import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
+import 'places_screen.dart';
 import 'admin_screen.dart';
 import 'backup_screen.dart';
 import '../widgets/restart_widget.dart';
@@ -53,6 +55,9 @@ class _HomeScreenState extends State<HomeScreen> {
     _approxOnly = await Prefs.approxOnly();
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
+    // Watch for contacts arriving at / leaving my places, app-wide (not just on
+    // the map). Safe to call repeatedly — it starts a single subscription.
+    GeofenceMonitor.instance.start();
     await _refresh();
     // Live: reciprocate the instant someone scans my code, and let the user
     // know a new contact connected (a local, content-free notification).
@@ -352,6 +357,9 @@ class _HomeScreenState extends State<HomeScreen> {
               switch (v) {
                 case 'name':
                   _editName();
+                case 'places':
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const PlacesScreen()));
                 case 'backup':
                   Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const BackupScreen()));
@@ -369,6 +377,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   value: 'name',
                   child: ListTile(
                       leading: Icon(Icons.edit), title: Text('Edit name'))),
+              const PopupMenuItem(
+                  value: 'places',
+                  child: ListTile(
+                      leading: Icon(Icons.place_outlined),
+                      title: Text('Places'))),
               const PopupMenuItem(
                   value: 'backup',
                   child: ListTile(

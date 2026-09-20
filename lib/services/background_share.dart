@@ -10,6 +10,8 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'location_sharing_service.dart';
 import 'bg_strategy.dart';
+import 'places_service.dart';
+import 'geofence_monitor.dart';
 
 /// Outcome of trying to turn on background sharing.
 enum BgEnableResult {
@@ -175,6 +177,20 @@ void onStart(ServiceInstance service) async {
     }
   }
 
+  // Fire arrive/leave alerts while the app is closed: pull contacts' latest
+  // (already-decrypted) locations and test them against my places. Skips
+  // cheaply when I have no places.
+  Future<void> checkGeofencesOnce() async {
+    try {
+      final places = await PlacesService.list();
+      if (places.isEmpty) return;
+      final byId = await LocationSharingService.fetchOnce();
+      await GeofenceMonitor.processLocations(byId, places);
+    } catch (_) {
+      // offline / no contacts — skip this tick.
+    }
+  }
+
   // Self-rescheduling tick: the interval can change between ticks as the
   // battery drains or the phone is plugged in, so we re-arm a one-shot Timer
   // each time rather than a fixed Timer.periodic.
@@ -188,6 +204,7 @@ void onStart(ServiceInstance service) async {
       } catch (_) {/* best-effort */}
     }
     await publishOnce(strategy.accuracy);
+    await checkGeofencesOnce();
     tickTimer = Timer(strategy.interval, tick);
   }
 
