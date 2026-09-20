@@ -12,6 +12,7 @@ import 'location_sharing_service.dart';
 import 'bg_strategy.dart';
 import 'places_service.dart';
 import 'geofence_monitor.dart';
+import 'history_service.dart';
 
 /// Outcome of trying to turn on background sharing.
 enum BgEnableResult {
@@ -172,6 +173,17 @@ void onStart(ServiceInstance service) async {
       );
       await LocationSharingService.publish(
           lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
+      // Record my own trail too (sampled; flushed at the end of the tick).
+      final me = AuthService.currentUser;
+      if (me != null) {
+        HistoryService.record(
+          subject: me.id,
+          lat: pos.latitude,
+          lng: pos.longitude,
+          ts: DateTime.now().toUtc(),
+          accuracy: pos.accuracy,
+        );
+      }
     } catch (_) {
       // offline / no permission / no contacts — skip this tick.
     }
@@ -205,6 +217,8 @@ void onStart(ServiceInstance service) async {
     }
     await publishOnce(strategy.accuracy);
     await checkGeofencesOnce();
+    // Persist this tick's buffered history points (mine + contacts').
+    await HistoryService.flush();
     tickTimer = Timer(strategy.interval, tick);
   }
 
