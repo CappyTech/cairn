@@ -188,6 +188,60 @@ class LocationSharingService {
     } catch (_) {}
   }
 
+  /// Resolve each contact's display name (local nickname wins over their own
+  /// decrypted name), keyed by peer id — so map labels and alerts match the
+  /// contacts list.
+  static Future<Map<String, String>> _resolveNames() async {
+    final nicks = await NicknameService.all();
+    final names = <String, String>{};
+    for (final c in await PairingService.myContacts()) {
+      final peerId = c.getStringValue('peer');
+      names[peerId] = NicknameService.resolveName(
+        alias: nicks[peerId],
+        peerName:
+            await PairingService.decryptName(c.getStringValue('peer_name')),
+      );
+    }
+    return names;
+  }
+
+  /// Decrypt one share row and, if it's from a current contact, store it in
+  /// [byId] keyed by sender.
+  static Future<void> _ingestInto(Map<String, ContactLocation> byId,
+      Map<String, String> names, RecordModel r) async {
+    final sender = r.getStringValue('sender');
+    if (!names.containsKey(sender)) return; // not a current contact
+    try {
+      final clear =
+          await CryptoService.openSealed(r.getStringValue('ciphertext'));
+      final data = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
+      byId[sender] = contactLocationFrom(
+        senderId: sender,
+        name: names[sender] ?? '',
+        data: data,
+        updatedIso: r.getStringValue('updated'),
+      );
+    } catch (_) {
+      // Undecryptable — ignore.
+    }
+  }
+
+  /// One-shot: load + decrypt every location currently shared TO me. Used by the
+  /// background isolate (which evaluates geofences per tick without holding a
+  /// realtime subscription open).
+  static Future<Map<String, ContactLocation>> fetchOnce() async {
+    final me = AuthService.currentUser;
+    if (me == null) return {};
+    final names = await _resolveNames();
+    final byId = <String, ContactLocation>{};
+    for (final r in await pb
+        .collection('location_shares')
+        .getFullList(filter: 'recipient = "${me.id}"')) {
+      await _ingestInto(byId, names, r);
+    }
+    return byId;
+  }
+
   /// Load + decrypt every location shared TO me, then keep it live.
   /// Returns an unsubscribe function.
   static Future<Future<void> Function()> subscribe(
@@ -195,34 +249,10 @@ class LocationSharingService {
     final me = AuthService.currentUser!;
     final byId = <String, ContactLocation>{};
 
-    // Resolve display names once (local nickname wins over their own name), so
-    // map labels match the contacts list.
-    final nicks = await NicknameService.all();
-    final names = <String, String>{};
-    for (final c in await PairingService.myContacts()) {
-      final peerId = c.getStringValue('peer');
-      names[peerId] = NicknameService.resolveName(
-        alias: nicks[peerId],
-        peerName: await PairingService.decryptName(c.getStringValue('peer_name')),
-      );
-    }
+    // Resolve display names once, so map labels match the contacts list.
+    final names = await _resolveNames();
 
-    Future<void> ingest(RecordModel r) async {
-      final sender = r.getStringValue('sender');
-      if (!names.containsKey(sender)) return; // not a current contact
-      try {
-        final clear = await CryptoService.openSealed(r.getStringValue('ciphertext'));
-        final data = jsonDecode(utf8.decode(clear)) as Map<String, dynamic>;
-        byId[sender] = contactLocationFrom(
-          senderId: sender,
-          name: names[sender] ?? '',
-          data: data,
-          updatedIso: r.getStringValue('updated'),
-        );
-      } catch (_) {
-        // Undecryptable — ignore.
-      }
-    }
+    Future<void> ingest(RecordModel r) => _ingestInto(byId, names, r);
 
     for (final r in await pb
         .collection('location_shares')

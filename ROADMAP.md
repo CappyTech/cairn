@@ -145,6 +145,20 @@ capability-token core as the mailbox model. So the safe first step was timing.
   outgoing shares in one query and keys them by recipient, replacing the
   per-contact `getFullList` (O(contacts) reads → 1). A pure `shareOpFor`
   decides create/update/delete/none per contact; writes are unchanged.
+- ✅ **Places & geofence alerts** *(done)*. Named places (Home, Work…) with a
+  radius, synced **encrypted-to-self** (`places` collection holds one sealed
+  blob per place — the server never reads a name, coordinate, or radius). A
+  contact inside a place is labelled "at Home" on the map, and an on-device
+  monitor fires a **local** notification (via `NotificationService`) when a
+  contact arrives at or leaves a place — evaluated from the already-decrypted
+  shares, so the server learns nothing new. Works in the foreground (an
+  app-lifetime monitor) and while closed (the background isolate checks each
+  tick). First sighting is seeded silently so opening the app never fires a
+  spurious "arrived". *Deploy note:* the `places` collection is added by
+  `pb_migrations/1758300000_add_places.js` — verify in the Admin UI after
+  deploy that it exists with owner-only rules (authored without a running
+  PocketBase, like the rate-limit migration). `services/places_service.dart`,
+  `services/geofence_monitor.dart`, `screens/places_screen.dart`.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
