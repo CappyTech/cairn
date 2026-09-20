@@ -176,6 +176,17 @@ capability-token core as the mailbox model. So the safe first step was timing.
   verify owner-only rules + the `(owner, subject, day)` unique index in the
   Admin UI after deploy. `services/history_service.dart`,
   `screens/history_screen.dart`.
+- ✅ **History retention & consent** *(done)*. History is kept **full by
+  default**, but the server operator can advertise a retention window via the
+  new public `server_config` collection (`history_retention_days`, 0 = keep
+  all). On first connect to a server the user is shown that policy and history
+  **only syncs if they agree** (declining leaves Places/geofence working, just
+  no history trail; a changed policy re-prompts). A local setting lets the user
+  keep *less* than the server does, and the client prunes to the smaller of the
+  two. *Enforcement is client-side today; a server-side cron sweep is a planned
+  fast-follow.* *Deploy note:* `pb_migrations/1758500000_add_server_config.js`
+  creates the collection + a default record — set the window in the Admin UI
+  (Collections → `server_config`). `services/history_policy.dart`.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
