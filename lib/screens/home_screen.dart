@@ -14,6 +14,7 @@ import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
 import 'places_screen.dart';
+import 'history_screen.dart';
 import 'admin_screen.dart';
 import 'backup_screen.dart';
 import '../widgets/restart_widget.dart';
@@ -360,6 +361,9 @@ class _HomeScreenState extends State<HomeScreen> {
                 case 'places':
                   Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const PlacesScreen()));
+                case 'history':
+                  Navigator.push(context,
+                      MaterialPageRoute(builder: (_) => const HistoryScreen()));
                 case 'backup':
                   Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const BackupScreen()));
@@ -382,6 +386,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListTile(
                       leading: Icon(Icons.place_outlined),
                       title: Text('Places'))),
+              const PopupMenuItem(
+                  value: 'history',
+                  child: ListTile(
+                      leading: Icon(Icons.history),
+                      title: Text('History & trips'))),
               const PopupMenuItem(
                   value: 'backup',
                   child: ListTile(

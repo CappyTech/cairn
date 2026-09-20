@@ -159,6 +159,23 @@ capability-token core as the mailbox model. So the safe first step was timing.
   deploy that it exists with owner-only rules (authored without a running
   PocketBase, like the rate-limit migration). `services/places_service.dart`,
   `services/geofence_monitor.dart`, `screens/places_screen.dart`.
+- ✅ **Location history & trips** *(done)*. A day-bucketed trail of where I and
+  my contacts have been, in a new owner-scoped `location_history` collection —
+  one **encrypted-to-self** blob per `(subject, day)`, so the server never reads
+  a coordinate. History is only ever MY observations (my own GPS fixes + the
+  locations contacts already share with me), re-encrypted to myself, so I gain
+  nothing I couldn't already read live; `location_shares` stays upserted.
+  Points are sampled (time/distance) and buffered on-device, then flushed into
+  the daily blob. The History screen picks a person + day and shows the
+  breadcrumb path on the map, a scrubbable timeline, and **trips** derived from
+  the trail + your Places ("Home → Work, 08:15–08:47"), with per-person clear.
+  *Metadata note:* `subject`/`day` are plaintext so the app can fetch the right
+  daily row — this exposes no more than `contacts`/`last_seen` already do;
+  blinding the routing graph is the separate Phase 3 work. *Deploy note:* the
+  collection is added by `pb_migrations/1758400000_add_location_history.js` —
+  verify owner-only rules + the `(owner, subject, day)` unique index in the
+  Admin UI after deploy. `services/history_service.dart`,
+  `screens/history_screen.dart`.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
