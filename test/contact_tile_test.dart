@@ -16,16 +16,24 @@ void main() {
     VoidCallback? onRemove,
     VoidCallback? onRescan,
     VoidCallback? onRename,
+    bool historyOn = true,
+    bool alertsOn = true,
+    VoidCallback? onToggleHistory,
+    VoidCallback? onToggleAlerts,
   }) =>
       ContactTile(
         name: name,
         precision: precision,
         approxOnly: approxOnly,
         keyChanged: keyChanged,
+        historyOn: historyOn,
+        alertsOn: alertsOn,
         onSetPrecision: onSetPrecision ?? (_) {},
         onRemove: onRemove ?? () {},
         onRescan: onRescan ?? () {},
         onRename: onRename ?? () {},
+        onToggleHistory: onToggleHistory,
+        onToggleAlerts: onToggleAlerts,
       );
 
   group('ContactTile.precLabel', () {
@@ -117,5 +125,30 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(renamed, isTrue);
+  });
+
+  testWidgets('history menu item fires onToggleHistory', (tester) async {
+    var toggled = false;
+    await tester
+        .pumpWidget(host(tile(onToggleHistory: () => toggled = true)));
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Record history'));
+    await tester.pumpAndSettle();
+
+    expect(toggled, isTrue);
+  });
+
+  testWidgets('alerts menu item fires onToggleAlerts', (tester) async {
+    var toggled = false;
+    await tester.pumpWidget(host(tile(onToggleAlerts: () => toggled = true)));
+
+    await tester.tap(find.byType(PopupMenuButton<String>));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Place alerts'));
+    await tester.pumpAndSettle();
+
+    expect(toggled, isTrue);
   });
 }

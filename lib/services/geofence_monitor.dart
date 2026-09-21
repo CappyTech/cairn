@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
+import 'contact_prefs_service.dart';
 import 'history_service.dart';
 import 'location_sharing_service.dart';
 import 'notification_service.dart';
@@ -134,16 +135,26 @@ class GeofenceMonitor {
       Map<String, ContactLocation> byId, List<Place> places) async {
     if (places.isEmpty || byId.isEmpty) return;
     var state = await loadState();
+    // Per-contact toggles (default on), loaded once for this tick.
+    final controls = await ContactPrefsService.all();
     final alerts = <GeofenceTransition>[];
     for (final c in byId.values) {
-      // Record the contact's position into their history trail (sampled).
-      HistoryService.record(
-        subject: c.senderId,
-        lat: c.lat,
-        lng: c.lng,
-        ts: c.updated,
-        accuracy: c.accuracy,
-      );
+      final pref = ContactPrefsService.resolve(controls, c.senderId);
+      // Record the contact's position into their history trail (sampled),
+      // unless history is turned off for them.
+      if (pref.history) {
+        HistoryService.record(
+          subject: c.senderId,
+          lat: c.lat,
+          lng: c.lng,
+          ts: c.updated,
+          accuracy: c.accuracy,
+        );
+      }
+      // Skip geofence evaluation entirely when alerts are off for this contact,
+      // so no transitions fire and their state isn't tracked (re-enabling seeds
+      // silently, avoiding a spurious "arrived").
+      if (!pref.alerts) continue;
       final r = evaluateContact(
         places: places,
         contactId: c.senderId,
