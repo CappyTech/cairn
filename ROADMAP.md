@@ -183,10 +183,14 @@ capability-token core as the mailbox model. So the safe first step was timing.
   **only syncs if they agree** (declining leaves Places/geofence working, just
   no history trail; a changed policy re-prompts). A local setting lets the user
   keep *less* than the server does, and the client prunes to the smaller of the
-  two. *Enforcement is client-side today; a server-side cron sweep is a planned
-  fast-follow.* *Deploy note:* `pb_migrations/1758500000_add_server_config.js`
+  two. Enforcement is on both sides: the client prunes to the effective window,
+  and a **server-side daily cron** (`pb_hooks/history_prune.pb.js`) authoritatively
+  deletes `location_history` rows older than the server's window (by the plaintext
+  `day`, never reading ciphertext) — so the policy holds even for a user who never
+  reopens the app. *Deploy note:* `pb_migrations/1758500000_add_server_config.js`
   creates the collection + a default record — set the window in the Admin UI
-  (Collections → `server_config`). `services/history_policy.dart`.
+  (Collections → `server_config`); the Dockerfile now ships `pb_hooks/`.
+  `services/history_policy.dart`.
 - **Notifications that respect privacy.** Push/local notifications for pair
   requests and "contact went stale" without leaking content through the server.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device

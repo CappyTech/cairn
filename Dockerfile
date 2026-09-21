@@ -14,6 +14,8 @@ RUN apk add --no-cache unzip ca-certificates \
 COPY build/web/ /pb/pb_public/
 # Schema migrations run automatically on startup (idempotent).
 COPY pb_migrations/ /pb/pb_migrations/
+# Server-side hooks (JS) — e.g. the scheduled history-retention prune.
+COPY pb_hooks/ /pb/pb_hooks/
 
 EXPOSE 8090
 # pb_data (the real database) is a mounted volume — see deploy/docker-compose.yml.
