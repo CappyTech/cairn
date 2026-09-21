@@ -21,10 +21,17 @@ class ContactTile extends StatelessWidget {
   /// The contact's key changed and hasn't been re-verified in person.
   final bool keyChanged;
 
+  /// Whether this contact's location history is being recorded, and whether
+  /// their movements raise place alerts (both default on). Local, per-contact.
+  final bool historyOn;
+  final bool alertsOn;
+
   final void Function(String precision) onSetPrecision;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
   final VoidCallback onRename;
+  final VoidCallback? onToggleHistory;
+  final VoidCallback? onToggleAlerts;
 
   const ContactTile({
     super.key,
@@ -36,6 +43,10 @@ class ContactTile extends StatelessWidget {
     required this.onRemove,
     required this.onRescan,
     required this.onRename,
+    this.historyOn = true,
+    this.alertsOn = true,
+    this.onToggleHistory,
+    this.onToggleAlerts,
   });
 
   static String precLabel(String p) => switch (p) {
@@ -73,12 +84,20 @@ class ContactTile extends StatelessWidget {
           onSelected: (v) => switch (v) {
             'rename' => onRename(),
             'remove' => onRemove(),
+            'history' => onToggleHistory?.call(),
+            'alerts' => onToggleAlerts?.call(),
             _ => onSetPrecision(v),
           },
           itemBuilder: (context) => [
             _precItem('precise', 'Precise', Icons.gps_fixed),
             _precItem('approximate', 'Approximate (~1 km)', Icons.blur_on),
             _precItem('off', 'Pause sharing', Icons.pause_circle_outline),
+            const PopupMenuDivider(),
+            // Local per-contact toggles. Trailing switch reflects current state.
+            _toggleItem('history', 'Record history', Icons.history, historyOn),
+            _toggleItem(
+                'alerts', 'Place alerts', Icons.notifications_active_outlined,
+                alertsOn),
             const PopupMenuDivider(),
             const PopupMenuItem(
                 value: 'rename',
@@ -90,6 +109,22 @@ class ContactTile extends StatelessWidget {
                 child: ListTile(
                     leading: Icon(Icons.person_remove), title: Text('Remove'))),
           ],
+        ),
+      ),
+    );
+  }
+
+  PopupMenuItem<String> _toggleItem(
+      String value, String label, IconData icon, bool on) {
+    return PopupMenuItem(
+      value: value,
+      child: ListTile(
+        leading: Icon(icon),
+        title: Text(label),
+        trailing: Icon(
+          on ? Icons.toggle_on : Icons.toggle_off,
+          color: on ? Brand.lichen : Brand.stone,
+          size: 26,
         ),
       ),
     );

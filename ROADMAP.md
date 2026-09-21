@@ -196,8 +196,12 @@ capability-token core as the mailbox model. So the safe first step was timing.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
   nickname (`services/nickname_service.dart`) overrides the contact's own name
   across the list and the map; kept entirely off the server and separate from
-  their `peer_name`, so a re-scan won't clobber it. *Still want:* clearer
-  last-seen/stale state and a friendlier pairing flow.
+  their `peer_name`, so a re-scan won't clobber it. ✅ *Per-contact controls
+  done* — on-device toggles (`services/contact_prefs_service.dart`, default on)
+  to stop recording a contact's **history** or firing **place alerts** for
+  them, from the contact row's menu; the geofence monitor honours both each
+  tick, and they're dropped on unpair. *Still want:* clearer last-seen/stale
+  state and a friendlier pairing flow.
 - **Map & sharing UX.** Presence/staleness affordances, precision indicators on
   the map, and clearer per-contact controls.
 

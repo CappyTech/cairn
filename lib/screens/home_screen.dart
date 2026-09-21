@@ -8,6 +8,7 @@ import '../services/pairing_service.dart';
 import '../services/background_share.dart';
 import '../services/notification_service.dart';
 import '../services/nickname_service.dart';
+import '../services/contact_prefs_service.dart';
 import '../services/geofence_monitor.dart';
 import '../services/history_policy.dart';
 import '../services/prefs.dart';
@@ -33,6 +34,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<RecordModel> _contacts = [];
   final Map<String, String> _names = {}; // contact id -> decrypted peer name
+  Map<String, ContactControls> _controls = {}; // peer id -> local toggles
   String _myName = 'New device';
   bool _loading = true;
   Future<void> Function()? _unsub;
@@ -124,6 +126,7 @@ class _HomeScreenState extends State<HomeScreen> {
       final contacts = await PairingService.myContacts();
       // A local nickname (if set) wins over the contact's own decrypted name.
       final nicks = await NicknameService.all();
+      _controls = await ContactPrefsService.all();
       _names.clear();
       for (final c in contacts) {
         final peerName =
@@ -200,16 +203,28 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _contactTile(RecordModel c) {
     final name = _names[c.id] ?? 'Unnamed device';
+    final peerId = c.getStringValue('peer');
+    final ctl = ContactPrefsService.resolve(_controls, peerId);
     return ContactTile(
       name: name,
       precision: c.getStringValue('precision'),
       approxOnly: _approxOnly,
       keyChanged: c.getStringValue('status') == 'key_changed',
+      historyOn: ctl.history,
+      alertsOn: ctl.alerts,
       onSetPrecision: (p) => _setPrecision(c, p),
-      onRemove: () => _removeContact(c.getStringValue('peer'), name),
+      onRemove: () => _removeContact(peerId, name),
       onRescan: _openScan,
       onRename: () => _renameContact(c, name),
+      onToggleHistory: () => _toggleContact(peerId, history: !ctl.history),
+      onToggleAlerts: () => _toggleContact(peerId, alerts: !ctl.alerts),
     );
+  }
+
+  Future<void> _toggleContact(String peerId, {bool? history, bool? alerts}) async {
+    if (history != null) await ContactPrefsService.setHistory(peerId, history);
+    if (alerts != null) await ContactPrefsService.setAlerts(peerId, alerts);
+    await _refresh();
   }
 
   Future<void> _renameContact(RecordModel c, String currentName) async {
