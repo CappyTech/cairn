@@ -76,4 +76,20 @@ class Prefs {
       await _s.write(key: 'history_local_retention', value: days.toString());
     }
   }
+
+  // --- Shared status --------------------------------------------------------
+
+  /// A short label I choose to broadcast to contacts alongside my location
+  /// (e.g. "Hotel"), so they see where I am without recreating a place. Empty/
+  /// null = no status. Rides the E2E-encrypted location blob.
+  static Future<String?> sharedStatus() async => _s.read(key: 'shared_status');
+
+  static Future<void> setSharedStatus(String? v) async {
+    final t = v?.trim() ?? '';
+    if (t.isEmpty) {
+      await _s.delete(key: 'shared_status');
+    } else {
+      await _s.write(key: 'shared_status', value: t);
+    }
+  }
 }

@@ -36,6 +36,12 @@ void main() {
       final off = home.copyWith(alerts: false);
       expect(Place.fromPayload('p1', off.toPayload()).alerts, isFalse);
     });
+
+    test('shareLabel defaults off and round-trips when on', () {
+      expect(Place.fromPayload('p1', home.toPayload()).shareLabel, isFalse);
+      final shown = home.copyWith(shareLabel: true);
+      expect(Place.fromPayload('p1', shown.toPayload()).shareLabel, isTrue);
+    });
   });
 
   group('distanceMeters', () {

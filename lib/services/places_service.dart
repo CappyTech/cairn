@@ -19,6 +19,7 @@ class Place {
   final double lng;
   final double radiusMeters; // geofence radius
   final bool alerts; // fire arrive/leave notifications for contacts
+  final bool shareLabel; // let contacts see this place's name when I'm here
 
   const Place({
     required this.id,
@@ -27,6 +28,7 @@ class Place {
     required this.lng,
     this.radiusMeters = defaultRadius,
     this.alerts = true,
+    this.shareLabel = false,
   });
 
   /// A sensible default geofence: large enough to absorb GPS jitter at a
@@ -40,6 +42,7 @@ class Place {
     double? lng,
     double? radiusMeters,
     bool? alerts,
+    bool? shareLabel,
   }) =>
       Place(
         id: id ?? this.id,
@@ -48,6 +51,7 @@ class Place {
         lng: lng ?? this.lng,
         radiusMeters: radiusMeters ?? this.radiusMeters,
         alerts: alerts ?? this.alerts,
+        shareLabel: shareLabel ?? this.shareLabel,
       );
 
   /// The cleartext JSON that gets sealed to my own key. Pure — unit-tested.
@@ -57,6 +61,7 @@ class Place {
         'lng': lng,
         'radius': radiusMeters,
         'alerts': alerts,
+        'shareLabel': shareLabel,
       };
 
   /// Rebuild a [Place] from a decrypted payload and its record [id]. Pure.
@@ -71,6 +76,7 @@ class Place {
         lng: (data['lng'] as num?)?.toDouble() ?? 0,
         radiusMeters: (data['radius'] as num?)?.toDouble() ?? defaultRadius,
         alerts: data['alerts'] != false, // default on
+        shareLabel: data['shareLabel'] == true, // default off (opt-in)
       );
 }
 

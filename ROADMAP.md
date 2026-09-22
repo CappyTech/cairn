@@ -207,6 +207,15 @@ capability-token core as the mailbox model. So the safe first step was timing.
   pairing flow.
 - **Map & sharing UX.** Presence/staleness affordances, precision indicators on
   the map, and clearer per-contact controls.
+- ✅ **Shared location label** *(done)*. A short status a sender broadcasts with
+  their location so contacts see where they are ("Alice — Hotel") without
+  recreating the place. Sourced from a manual status or from one of your own
+  places marked "show name to contacts when I'm here" (`Place.shareLabel`,
+  opt-in). It rides the existing per-recipient **E2E-encrypted** `location_shares`
+  blob (`lbl` field) — no new collection, and the server reads nothing. On the
+  map, a sender's own label wins over the local "at <my place>" hint.
+  `LocationSharingService.labelForPosition`. *Next:* persistent shared pins
+  (a `shared_places` collection the sharer can share and revoke).
 
 ---
 

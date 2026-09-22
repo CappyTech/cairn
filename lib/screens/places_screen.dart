@@ -179,6 +179,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
   late LatLng _center;
   double _radius = Place.defaultRadius;
   bool _alerts = true;
+  bool _shareLabel = false;
   bool _saving = false;
 
   bool get _isEdit => widget.place != null;
@@ -192,6 +193,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
       _center = LatLng(p.lat, p.lng);
       _radius = p.radiusMeters;
       _alerts = p.alerts;
+      _shareLabel = p.shareLabel;
     } else {
       _center = _fallback;
       _useMyLocation(recenter: true); // start on the user where possible
@@ -231,6 +233,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
       lng: _center.longitude,
       radiusMeters: _radius,
       alerts: _alerts,
+      shareLabel: _shareLabel,
     );
     try {
       if (_isEdit) {
@@ -369,6 +372,17 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                     title: const Text('Alert me about contacts'),
                     subtitle: const Text(
                         'Notify when a contact arrives here or leaves.',
+                        style: TextStyle(fontSize: 12)),
+                  ),
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: _shareLabel,
+                    onChanged: (v) => setState(() => _shareLabel = v),
+                    secondary: const Icon(Icons.label_outline),
+                    title: const Text('Show name to contacts when I\'m here'),
+                    subtitle: const Text(
+                        'Contacts see e.g. "at Home" on your pin while you\'re '
+                        'inside this place. The place itself stays private.',
                         style: TextStyle(fontSize: 12)),
                   ),
                 ],

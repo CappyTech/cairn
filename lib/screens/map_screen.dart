@@ -223,10 +223,12 @@ class _MapScreenState extends State<MapScreen> {
     final markers = <Marker>[];
     for (final c in _contacts.values) {
       final (color, presenceLabel) = _presence(c.updated);
-      // If they're inside one of my places, say so ("· at Home").
+      // Where they are: a status THEY broadcast ("Hotel") wins; otherwise, if
+      // they're inside one of MY places, note that ("at Home").
       final at = PlacesService.placeContaining(_places, c.lat, c.lng);
+      final where = c.label ?? (at != null ? 'at ${at.name}' : null);
       final label =
-          at != null ? '$presenceLabel · at ${at.name}' : presenceLabel;
+          where != null ? '$presenceLabel · $where' : presenceLabel;
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
         width: 190,

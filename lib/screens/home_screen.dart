@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> Function()? _unsub;
   bool _bgEnabled = false;
   bool _approxOnly = false;
+  String _status = ''; // my broadcast status label ("Hotel"); '' = none
 
   bool get _bgSupported =>
       !kIsWeb &&
@@ -62,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _bgEnabled = await BackgroundShare.isEnabled();
     }
     _approxOnly = await Prefs.approxOnly();
+    _status = await Prefs.sharedStatus() ?? '';
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
     // Watch for contacts arriving at / leaving my places, app-wide (not just on
@@ -128,6 +130,50 @@ class _HomeScreenState extends State<HomeScreen> {
     } else {
       await HistoryPolicy.decline(days);
     }
+  }
+
+  Future<void> _setStatus(String v) async {
+    await Prefs.setSharedStatus(v);
+    if (mounted) setState(() => _status = v.trim());
+  }
+
+  Future<void> _editStatus() async {
+    final controller = TextEditingController(text: _status);
+    final result = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Set status'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            TextField(
+              controller: controller,
+              autofocus: true,
+              textCapitalization: TextCapitalization.sentences,
+              decoration: const InputDecoration(
+                  hintText: 'e.g. Hotel, Airport, Grandma\'s',
+                  border: OutlineInputBorder()),
+            ),
+            const SizedBox(height: 8),
+            const Text(
+              'Shown to your contacts next to your location, end-to-end '
+              'encrypted. Clear it any time.',
+              style: TextStyle(color: Brand.stone, fontSize: 12),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, controller.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+    if (result != null) await _setStatus(result);
   }
 
   Future<void> _refresh() async {
@@ -575,6 +621,28 @@ class _HomeScreenState extends State<HomeScreen> {
                       : 'Off — precision is set per contact below.',
                   style: const TextStyle(fontSize: 12),
                 ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: ListTile(
+                leading: const Icon(Icons.label_outline),
+                title: const Text('Status'),
+                subtitle: Text(
+                  _status.isEmpty
+                      ? 'Off — set a label (e.g. "Hotel") to show contacts where you are.'
+                      : 'Contacts see: "$_status"',
+                  style: const TextStyle(fontSize: 12),
+                ),
+                trailing: _status.isEmpty
+                    ? const Icon(Icons.edit_outlined)
+                    : IconButton(
+                        icon: const Icon(Icons.close),
+                        tooltip: 'Clear status',
+                        onPressed: () => _setStatus(''),
+                      ),
+                onTap: _editStatus,
               ),
             ),
             const SizedBox(height: 24),
