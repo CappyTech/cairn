@@ -214,8 +214,19 @@ capability-token core as the mailbox model. So the safe first step was timing.
   opt-in). It rides the existing per-recipient **E2E-encrypted** `location_shares`
   blob (`lbl` field) — no new collection, and the server reads nothing. On the
   map, a sender's own label wins over the local "at <my place>" hint.
-  `LocationSharingService.labelForPosition`. *Next:* persistent shared pins
-  (a `shared_places` collection the sharer can share and revoke).
+  `LocationSharingService.labelForPosition`.
+- ✅ **Shared pins** *(done)*. Persistent pins one user shares with chosen
+  contacts ("meet me here" / "where I'm staying") that stay on the recipient's
+  map. New `shared_places` collection: each row's `ciphertext` is sealed to the
+  **recipient's** key (server can't read it); the sharer keeps a self-addressed
+  copy to manage/revoke and to see it on their own devices, and a plaintext
+  `group` id ties the per-recipient copies together for one-tap revoke. Share a
+  place from the Places list → pick contacts; received pins render as distinct
+  markers ("Alice · Grand Hotel"); a Shared-pins screen lists what you shared
+  (with revoke) and what's shared with you. `services/shared_places_service.dart`,
+  `screens/shared_pins_screen.dart`. *Deploy note:*
+  `pb_migrations/1758600000_add_shared_places.js` — verify owner/recipient rules
+  in the Admin UI after deploy.
 
 ---
 

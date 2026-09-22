@@ -851,5 +851,111 @@
         "created":  "2026-09-20 00:00:00.000Z",
         "updated":  "2026-09-20 00:00:00.000Z",
         "system":  false
+    },
+    {
+        "id":  "pbc_5561028374",
+        "listRule":  "@request.auth.id = owner.id || @request.auth.id = recipient.id",
+        "viewRule":  "@request.auth.id = owner.id || @request.auth.id = recipient.id",
+        "createRule":  "@request.auth.id = owner.id",
+        "updateRule":  "@request.auth.id = owner.id",
+        "deleteRule":  "@request.auth.id = owner.id",
+        "name":  "shared_places",
+        "type":  "base",
+        "fields":  [
+                       {
+                           "autogeneratePattern":  "[a-z0-9]{15}",
+                           "hidden":  false,
+                           "id":  "text3208210256",
+                           "max":  15,
+                           "min":  15,
+                           "name":  "id",
+                           "pattern":  "^[a-z0-9]+$",
+                           "presentable":  false,
+                           "primaryKey":  true,
+                           "required":  true,
+                           "system":  true,
+                           "type":  "text"
+                       },
+                       {
+                           "cascadeDelete":  true,
+                           "collectionId":  "_pb_users_auth_",
+                           "hidden":  false,
+                           "id":  "relation1593854673",
+                           "maxSelect":  1,
+                           "minSelect":  0,
+                           "name":  "owner",
+                           "presentable":  false,
+                           "required":  true,
+                           "system":  false,
+                           "type":  "relation"
+                       },
+                       {
+                           "cascadeDelete":  true,
+                           "collectionId":  "_pb_users_auth_",
+                           "hidden":  false,
+                           "id":  "relation1745156938",
+                           "maxSelect":  1,
+                           "minSelect":  0,
+                           "name":  "recipient",
+                           "presentable":  false,
+                           "required":  true,
+                           "system":  false,
+                           "type":  "relation"
+                       },
+                       {
+                           "autogeneratePattern":  "",
+                           "hidden":  false,
+                           "id":  "text1000000004",
+                           "max":  64,
+                           "min":  0,
+                           "name":  "group",
+                           "pattern":  "",
+                           "presentable":  false,
+                           "primaryKey":  false,
+                           "required":  true,
+                           "system":  false,
+                           "type":  "text"
+                       },
+                       {
+                           "autogeneratePattern":  "",
+                           "hidden":  false,
+                           "id":  "text4235667063",
+                           "max":  100000,
+                           "min":  0,
+                           "name":  "ciphertext",
+                           "pattern":  "",
+                           "presentable":  false,
+                           "primaryKey":  false,
+                           "required":  true,
+                           "system":  false,
+                           "type":  "text"
+                       },
+                       {
+                           "hidden":  false,
+                           "id":  "autodate2990389176",
+                           "name":  "created",
+                           "onCreate":  true,
+                           "onUpdate":  false,
+                           "presentable":  false,
+                           "system":  false,
+                           "type":  "autodate"
+                       },
+                       {
+                           "hidden":  false,
+                           "id":  "autodate3332085495",
+                           "name":  "updated",
+                           "onCreate":  true,
+                           "onUpdate":  true,
+                           "presentable":  false,
+                           "system":  false,
+                           "type":  "autodate"
+                       }
+                   ],
+        "indexes":  [
+                        "CREATE INDEX `idx_shared_places_owner_group` ON `shared_places` (`owner`, `group`)"
+                    ],
+        "created":  "2026-09-20 00:00:00.000Z",
+        "updated":  "2026-09-20 00:00:00.000Z",
+        "system":  false
     }
 ]
