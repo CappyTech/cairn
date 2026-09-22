@@ -122,4 +122,87 @@ void main() {
       expect(HistoryService.tripsFromPoints(pts, [home, work]), isEmpty);
     });
   });
+
+  group('HistoryTimeline.build', () {
+    // ~500 m north of Home, outside any place: an unnamed spot.
+    HistoryPoint cafe(DateTime t) => HistoryPoint(51.5074 + 0.0045, -0.1278, t);
+
+    test('empty → nothing; a single point → one stay', () {
+      expect(HistoryTimeline.build([], [home]), isEmpty);
+      final one = HistoryTimeline.build([at(home, base(0))], [home]);
+      expect(one, hasLength(1));
+      expect((one.single as Stay).place?.id, 'home');
+      // Works without any saved places too (the unnamed-spot case).
+      final bare = HistoryTimeline.build([cafe(base(0))], []);
+      expect((bare.single as Stay).place, isNull);
+    });
+
+    test('Home → Work alternates stay, move, stay', () {
+      final pts = [
+        at(home, base(0)),
+        at(home, base(5)),
+        away(base(10)),
+        cafe(base(15)), // still moving,
+        at(work, base(20)),
+        at(work, base(25)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Move, Stay]);
+      final m = tl[1] as Move;
+      expect(m.from?.id, 'home');
+      expect(m.to?.id, 'work');
+      expect(m.start, base(5));
+      expect(m.end, base(20));
+      expect(m.distanceMeters, greaterThan(0));
+      expect((tl[2] as Stay).start, base(20));
+    });
+
+    test('lingering in an unnamed spot becomes a stay', () {
+      final pts = [
+        at(home, base(0)),
+        away(base(5)),
+        cafe(base(10)),
+        cafe(base(20)), // 10 min at the café
+        cafe(base(30)),
+        away(base(35)),
+        at(home, base(40)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Move, Stay, Move, Stay]);
+      final stop = tl[2] as Stay;
+      expect(stop.place, isNull);
+      expect(stop.start, base(10));
+      expect(stop.end, base(30));
+    });
+
+    test('passing briefly through a spot is not a stay', () {
+      final pts = [
+        at(home, base(0)),
+        cafe(base(2)),
+        cafe(base(3)), // only 1 min
+        away(base(6)),
+        at(work, base(10)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Move, Stay]);
+    });
+
+    test('all movement, no stays → a single move', () {
+      final pts = [
+        away(base(0)),
+        cafe(base(1)),
+        HistoryPoint(51.5074 - 0.01, -0.1278, base(2)),
+      ];
+      final tl = HistoryTimeline.build(pts, []);
+      expect(tl, hasLength(1));
+      expect(tl.single, isA<Move>());
+      expect((tl.single as Move).from, isNull);
+    });
+
+    test('pathLength sums consecutive hops', () {
+      expect(HistoryTimeline.pathLength([]), 0);
+      final d = HistoryTimeline.pathLength([at(home, base(0)), away(base(1))]);
+      expect(d, closeTo(1000, 20)); // 0.009° latitude ≈ 1 km
+    });
+  });
 }

@@ -17,9 +17,9 @@ class _Subject {
   const _Subject(this.id, this.name);
 }
 
-/// History & trips: pick a person and a day to see where they've been — the
-/// breadcrumb path on the map, a scrubbable timeline, and the trips they took
-/// between your places. All from locations already end-to-end encrypted to me.
+/// History: pick a person and a day to see where they've been — the
+/// breadcrumb path on the map, a scrubbable slider, and a timeline of where
+/// they stayed and how they moved between those stays. All from locations already end-to-end encrypted to me.
 class HistoryScreen extends StatefulWidget {
   /// Optionally open straight to a given subject (e.g. from a contact tile).
   final String? initialSubjectId;
@@ -39,7 +39,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   String? _day;
 
   List<HistoryPoint> _points = [];
-  List<Trip> _trips = [];
+  List<TimelineEntry> _timeline = [];
   int _scrub = 0;
   bool _loading = true;
 
@@ -101,11 +101,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final pts = _day == null
         ? <HistoryPoint>[]
         : await _safe(HistoryService.loadDay(_subjectId!, _day!), <HistoryPoint>[]);
-    final trips = HistoryService.tripsFromPoints(pts, _places);
+    final timeline = HistoryTimeline.build(pts, _places);
     if (!mounted) return;
     setState(() {
       _points = pts;
-      _trips = trips;
+      _timeline = timeline;
       _scrub = pts.isEmpty ? 0 : pts.length - 1;
       _loading = false;
     });
@@ -140,6 +140,37 @@ class _HistoryScreenState extends State<HistoryScreen> {
       ? '${(m / 1000).toStringAsFixed(1)} km'
       : '${m.round()} m';
 
+  static const _weekdays = [
+    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday',
+    'Sunday'
+  ];
+  static const _months = [
+    'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+    'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+  ];
+
+  /// "YYYY-MM-DD" day key → a UTC midnight (no DST surprises when diffing).
+  static DateTime _parseDay(String key) => DateTime.parse('${key}T00:00:00Z');
+
+  static String _keyOf(DateTime d) =>
+      '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
+
+  /// Friendly day label: Today, Yesterday, a weekday this week, else a date.
+  static String _dayLabel(String key) {
+    final d = _parseDay(key);
+    final today = _parseDay(HistoryService.dayKey(DateTime.now()));
+    final ago = today.difference(d).inDays;
+    if (ago == 0) return 'Today';
+    if (ago == 1) return 'Yesterday';
+    if (ago > 1 && ago < 7) return _weekdays[d.weekday - 1];
+    final short = '${_weekdays[d.weekday - 1].substring(0, 3)} ${d.day} '
+        '${_months[d.month - 1]}';
+    return d.year == today.year ? short : '$short ${d.year}';
+  }
+
+  static String _span(DateTime a, DateTime b) =>
+      _hm(a) == _hm(b) ? _hm(a) : '${_hm(a)}–${_hm(b)}';
+
   static String _dur(Duration d) {
     if (d.inMinutes < 1) return '<1 min';
     if (d.inMinutes < 60) return '${d.inMinutes} min';
@@ -171,8 +202,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
         children: [
           _selectors(),
           Expanded(child: _mapArea()),
-          if (_points.length > 1) _scrubber(),
-          Expanded(child: _tripsList()),
+          if (!_loading && _points.isNotEmpty) _bottomPanel(),
         ],
       ),
     );
@@ -203,29 +233,84 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
             ),
             const SizedBox(width: 10),
-            Expanded(
-              child: DropdownButtonFormField<String>(
-                initialValue: _day,
-                isExpanded: true,
-                decoration: const InputDecoration(
-                  labelText: 'Day',
-                  border: OutlineInputBorder(),
-                  contentPadding: EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                ),
-                items: [
-                  for (final d in _days)
-                    DropdownMenuItem(value: d, child: Text(d)),
-                ],
-                onChanged: (v) {
-                  if (v == null || v == _day) return;
-                  setState(() => _day = v);
-                  _loadDay();
-                },
-              ),
-            ),
+            Expanded(child: _dayPicker()),
           ],
         ),
       );
+
+  /// Index of the selected day in [_days] (newest first), or -1.
+  int get _dayIndex => _day == null ? -1 : _days.indexOf(_day!);
+
+  void _selectDay(String day) {
+    if (day == _day) return;
+    setState(() => _day = day);
+    _loadDay();
+  }
+
+  /// ‹ Day › — step through recorded days, or tap the label for a calendar
+  /// limited to days that actually have history.
+  Widget _dayPicker() {
+    final i = _dayIndex;
+    final older = i >= 0 && i + 1 < _days.length ? _days[i + 1] : null;
+    final newer = i > 0 ? _days[i - 1] : null;
+    return InputDecorator(
+      decoration: const InputDecoration(
+        labelText: 'Day',
+        border: OutlineInputBorder(),
+        contentPadding: EdgeInsets.symmetric(horizontal: 0, vertical: 0),
+      ),
+      child: Row(
+        children: [
+          IconButton(
+            tooltip: 'Previous day',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_left),
+            onPressed: older == null ? null : () => _selectDay(older),
+          ),
+          Expanded(
+            child: InkWell(
+              borderRadius: BorderRadius.circular(6),
+              onTap: _days.isEmpty ? null : _pickDay,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 10),
+                child: Text(
+                  _day == null ? '—' : _dayLabel(_day!),
+                  textAlign: TextAlign.center,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15),
+                ),
+              ),
+            ),
+          ),
+          IconButton(
+            tooltip: 'Next day',
+            visualDensity: VisualDensity.compact,
+            icon: const Icon(Icons.chevron_right),
+            onPressed: newer == null ? null : () => _selectDay(newer),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _pickDay() async {
+    if (_days.isEmpty) return;
+    DateTime local(String key) {
+      final d = _parseDay(key);
+      return DateTime(d.year, d.month, d.day);
+    }
+
+    final available = _days.toSet();
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: local(_day ?? _days.first),
+      firstDate: local(_days.last),
+      lastDate: local(_days.first),
+      selectableDayPredicate: (d) => available.contains(_keyOf(d)),
+      helpText: 'Days with history',
+    );
+    if (picked != null) _selectDay(_keyOf(picked));
+  }
 
   Widget _mapArea() {
     return Stack(
@@ -370,45 +455,102 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  Widget _tripsList() {
-    if (_loading) return const SizedBox.shrink();
-    if (_trips.isEmpty) {
-      return const Center(
-        child: Padding(
-          padding: EdgeInsets.all(16),
-          child: Text(
-            'No trips between your places on this day.\n'
-            'Add places (Home, Work…) to see trips here.',
-            textAlign: TextAlign.center,
-            style: TextStyle(color: Brand.stone, fontSize: 13),
-          ),
+  /// Summary, scrubber and the day's timeline, sized to its content (capped)
+  /// so the map keeps most of the screen.
+  Widget _bottomPanel() {
+    final maxList = MediaQuery.sizeOf(context).height * 0.32;
+    return Material(
+      elevation: 2,
+      child: SafeArea(
+        top: false,
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            _summary(),
+            if (_points.length > 1) _scrubber(),
+            const Divider(height: 1),
+            ConstrainedBox(
+              constraints: BoxConstraints(maxHeight: maxList),
+              child: ListView.builder(
+                shrinkWrap: true,
+                padding: const EdgeInsets.symmetric(vertical: 4),
+                itemCount: _timeline.length,
+                itemBuilder: (context, i) => _timelineTile(_timeline[i]),
+              ),
+            ),
+          ],
         ),
-      );
-    }
-    return ListView.separated(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      itemCount: _trips.length,
-      separatorBuilder: (_, _) => const Divider(height: 1),
-      itemBuilder: (context, i) {
-        final t = _trips[i];
-        return ListTile(
-          dense: true,
-          leading: const Icon(Icons.route, color: Brand.lichen),
-          title: Text('${t.fromLabel} → ${t.toLabel}',
-              style: const TextStyle(fontWeight: FontWeight.w600)),
-          subtitle: Text(
-              '${_hm(t.start)}–${_hm(t.end)} · ${_dist(t.distanceMeters)} · ${_dur(t.duration)}'),
-          onTap: () => _focusTrip(t),
-        );
-      },
+      ),
     );
   }
 
-  void _focusTrip(Trip t) {
-    // Snap the scrubber to the trip's start and frame its path.
-    final startIdx = _points.indexWhere((p) => !p.t.isBefore(t.start));
-    if (startIdx >= 0) setState(() => _scrub = startIdx);
-    final coords = [for (final p in t.path) LatLng(p.lat, p.lng)];
+  /// One line: stops · distance · time span (or a single sighting).
+  Widget _summary() {
+    final String text;
+    if (_points.length == 1) {
+      text = '1 location · seen at ${_hm(_points.first.t)}';
+    } else {
+      final stops = _timeline.whereType<Stay>().length;
+      final dist = HistoryTimeline.pathLength(_points);
+      text = [
+        '$stops ${stops == 1 ? 'stop' : 'stops'}',
+        _dist(dist),
+        _span(_points.first.t, _points.last.t),
+      ].join(' · ');
+    }
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
+      child: Text(text,
+          style: const TextStyle(
+              color: Brand.slate, fontWeight: FontWeight.w600, fontSize: 13)),
+    );
+  }
+
+  Widget _timelineTile(TimelineEntry e) {
+    switch (e) {
+      case Stay():
+        final named = e.place != null;
+        return ListTile(
+          dense: true,
+          leading: Icon(named ? Icons.place : Icons.place_outlined,
+              color: named ? Brand.lichen : Brand.stone),
+          title: Text(e.place?.name ?? 'Stopped',
+              style: const TextStyle(fontWeight: FontWeight.w600)),
+          subtitle: Text(e.duration.inMinutes < 1
+              ? 'Seen at ${_hm(e.start)}'
+              : '${_span(e.start, e.end)} · ${_dur(e.duration)}'),
+          onTap: () => _focusStay(e),
+        );
+      case Move():
+        return ListTile(
+          dense: true,
+          leading: const Icon(Icons.route, color: Brand.slate),
+          title: Text('Travelled ${_dist(e.distanceMeters)}'),
+          subtitle:
+              Text('${_span(e.start, e.end)} · ${_dur(e.duration)}'),
+          onTap: () => _focusMove(e),
+        );
+    }
+  }
+
+  /// Snap the scrubber to the first point at/after [t].
+  void _scrubTo(DateTime t) {
+    final idx = _points.indexWhere((p) => !p.t.isBefore(t));
+    if (idx >= 0) setState(() => _scrub = idx);
+  }
+
+  void _focusStay(Stay s) {
+    _scrubTo(s.start);
+    try {
+      _map.move(LatLng(s.lat, s.lng), 16);
+    } catch (_) {}
+  }
+
+  void _focusMove(Move m) {
+    // Snap the scrubber to the move's start and frame its path.
+    _scrubTo(m.start);
+    final coords = [for (final p in m.path) LatLng(p.lat, p.lng)];
     if (coords.isEmpty) return;
     try {
       if (coords.length == 1) {
