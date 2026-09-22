@@ -5,6 +5,7 @@ import 'auth_service.dart';
 import 'pairing_service.dart';
 import 'crypto_service.dart';
 import 'nickname_service.dart';
+import 'places_service.dart';
 import 'prefs.dart';
 
 /// A decrypted location received from a paired contact.
@@ -15,6 +16,7 @@ class ContactLocation {
   final double lng;
   final double? accuracy;
   final bool approximate; // sender shared a rounded (coarse) position
+  final String? label; // a status the SENDER chose to broadcast ("Hotel")
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -24,6 +26,7 @@ class ContactLocation {
     required this.lng,
     this.accuracy,
     this.approximate = false,
+    this.label,
     required this.updated,
   });
 }
@@ -90,6 +93,7 @@ class LocationSharingService {
     double? accuracy,
     required bool approximate,
     required String ts,
+    String? label,
   }) {
     return {
       'lat': approximate ? coarse(lat) : lat,
@@ -97,7 +101,26 @@ class LocationSharingService {
       'acc': approximate ? null : accuracy,
       'approx': approximate,
       'ts': ts,
+      // A short status the sender broadcasts (e.g. "Hotel"); omitted when none.
+      if (label != null && label.isNotEmpty) 'lbl': label,
     };
+  }
+
+  /// The label to broadcast for my current position: a manual [manualStatus]
+  /// wins, else the name of the first contact-visible place I'm inside, else
+  /// null. Pure — unit-tested.
+  static String? labelForPosition({
+    String? manualStatus,
+    required List<Place> places,
+    required double lat,
+    required double lng,
+  }) {
+    final s = manualStatus?.trim() ?? '';
+    if (s.isNotEmpty) return s;
+    for (final p in places) {
+      if (p.shareLabel && PlacesService.isInside(p, lat, lng)) return p.name;
+    }
+    return null;
   }
 
   /// Build a [ContactLocation] from a decrypted payload [data]. Pure.
@@ -114,6 +137,9 @@ class LocationSharingService {
       lng: (data['lng'] as num).toDouble(),
       accuracy: (data['acc'] as num?)?.toDouble(),
       approximate: data['approx'] == true,
+      label: (data['lbl'] as String?)?.trim().isNotEmpty == true
+          ? (data['lbl'] as String).trim()
+          : null,
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }
@@ -131,6 +157,18 @@ class LocationSharingService {
     final approxOnly = await Prefs.approxOnly();
     final contacts = await PairingService.myContacts();
     final ts = DateTime.now().toUtc().toIso8601String();
+
+    // The status to broadcast this tick: a manual status, else a contact-visible
+    // place I'm inside. Computed once (same for every recipient).
+    String? label;
+    try {
+      label = labelForPosition(
+        manualStatus: await Prefs.sharedStatus(),
+        places: await PlacesService.list(),
+        lat: lat,
+        lng: lng,
+      );
+    } catch (_) {/* no places / offline — just omit the label */}
 
     // Fetch all my outgoing shares once, keyed by recipient, instead of a
     // per-contact query. One read replaces the previous O(contacts) reads.
@@ -167,6 +205,7 @@ class LocationSharingService {
             accuracy: accuracy,
             approximate: action == ShareAction.sendApproximate,
             ts: ts,
+            label: label,
           )));
           final blob = await CryptoService.sealFor(peerKey, payload);
           final body = {
