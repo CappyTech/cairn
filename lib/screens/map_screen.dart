@@ -34,7 +34,6 @@ class _MapScreenState extends State<MapScreen> {
   List<Place> _places = [];
   List<SharedPin> _sharedPins = [];
   String? _error;
-  bool _loading = true;
 
   StreamSubscription<Position>? _posSub;
   Future<void> Function()? _unsub;
@@ -69,14 +68,25 @@ class _MapScreenState extends State<MapScreen> {
       unawaited(_checkStale());
     });
 
+    // Show the map straight away, centred on the last cached fix. A precise
+    // fix can take several seconds (high-accuracy GPS, cold start, indoors),
+    // and blocking the whole screen on it is what made the map feel slow to
+    // load. The basemap and contacts are usable immediately; we refine our own
+    // position below. Don't record this cached (possibly stale) fix into the
+    // trail — that's for live positions only.
+    final last = await LocationService.lastKnown();
+    if (!mounted) return;
+    if (last != null) _onPosition(last, recenter: true, record: false);
+
     try {
       final pos = await LocationService.current();
       // The fix above can take several seconds; the user may have left the
       // screen meanwhile. Bail before touching state or the map controller.
       if (!mounted) return;
-      _onPosition(pos, recenter: true);
+      // Only recentre if we haven't already snapped to the cached fix, so we
+      // don't yank the map from under a user who's started panning.
+      _onPosition(pos, recenter: _me == null);
       _publish(pos); // one share on first fix so contacts aren't left blank
-      setState(() => _loading = false);
 
       _posSub = LocationService.stream().listen((p) => _onPosition(p));
       // Publish on a FIXED cadence, not per movement. The map tracks our own
@@ -92,17 +102,18 @@ class _MapScreenState extends State<MapScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
-        _loading = false;
+        // If a cached fix already put us on the map, keep showing it rather
+        // than replacing the whole screen with an error card.
+        if (_me == null) _error = e.toString();
       });
     }
   }
 
-  void _onPosition(Position p, {bool recenter = false}) {
+  void _onPosition(Position p, {bool recenter = false, bool record = true}) {
     _lastPos = p;
     // Record my own trail (sampled; the geofence monitor flushes periodically).
     final me = AuthService.currentUser;
-    if (me != null) {
+    if (record && me != null) {
       HistoryService.record(
         subject: me.id,
         lat: p.latitude,
@@ -386,7 +397,19 @@ class _MapScreenState extends State<MapScreen> {
               ),
             ],
           ),
-          if (_loading) const Center(child: CircularProgressIndicator()),
+          // Non-blocking "locating" chip: the map (basemap + contacts) stays
+          // visible and interactive while we acquire our own precise fix,
+          // rather than a full-screen spinner hiding everything.
+          if (_me == null && _error == null)
+            const SafeArea(
+              child: Align(
+                alignment: Alignment.topCenter,
+                child: Padding(
+                  padding: EdgeInsets.only(top: 8),
+                  child: _LocatingChip(),
+                ),
+              ),
+            ),
           if (_error != null)
             Center(
               child: Card(
@@ -409,10 +432,7 @@ class _MapScreenState extends State<MapScreen> {
                       const SizedBox(height: 12),
                       FilledButton(
                         onPressed: () {
-                          setState(() {
-                            _error = null;
-                            _loading = true;
-                          });
+                          setState(() => _error = null);
                           _start();
                         },
                         child: const Text('Retry'),
@@ -431,6 +451,42 @@ class _MapScreenState extends State<MapScreen> {
               onPressed: () => _map.move(_me!, 15),
               child: const Icon(Icons.my_location),
             ),
+    );
+  }
+}
+
+/// A small, unobtrusive pill shown while we're still acquiring this device's
+/// own fix. Unlike a full-screen spinner it leaves the map (basemap and
+/// contacts) visible and interactive underneath.
+class _LocatingChip extends StatelessWidget {
+  const _LocatingChip();
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(20),
+      child: const Padding(
+        padding: EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            SizedBox(
+              width: 14,
+              height: 14,
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: Brand.lichen),
+            ),
+            SizedBox(width: 8),
+            Text('Finding your location…',
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Brand.slate,
+                    fontWeight: FontWeight.w500)),
+          ],
+        ),
+      ),
     );
   }
 }
