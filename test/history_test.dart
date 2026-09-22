@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_app/services/history_service.dart';
 import 'package:my_app/services/places_service.dart';
+import 'package:my_app/services/shared_places_service.dart';
 
 /// Pure logic behind history: point wire round-trip, day bucketing, merge/dedup,
 /// and trip segmentation from a breadcrumb trail + places. No live PocketBase.
@@ -197,6 +198,19 @@ void main() {
       expect(tl, hasLength(1));
       expect(tl.single, isA<Move>());
       expect((tl.single as Move).from, isNull);
+    });
+
+    test('pinNear names a stop from the closest shared pin in range', () {
+      SharedPin pin(String name, double lat) => SharedPin(
+          group: name, ownerId: 'o', name: name, lat: lat, lng: -0.1278);
+      final pins = [
+        pin('Far', 51.5074 + 0.01), // ~1.1 km away
+        pin('Near', 51.5074 + 0.0005), // ~55 m
+        pin('Nearer', 51.5074 + 0.0002), // ~22 m
+      ];
+      expect(HistoryTimeline.pinNear(pins, 51.5074, -0.1278)?.name, 'Nearer');
+      expect(HistoryTimeline.pinNear([pins.first], 51.5074, -0.1278), isNull);
+      expect(HistoryTimeline.pinNear([], 51.5074, -0.1278), isNull);
     });
 
     test('pathLength sums consecutive hops', () {

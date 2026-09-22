@@ -8,7 +8,9 @@ import '../services/nickname_service.dart';
 import '../services/pairing_service.dart';
 import '../services/places_service.dart';
 import '../services/prefs.dart';
+import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
+import 'places_screen.dart';
 
 /// A person whose history I can view: me, or a paired contact.
 class _Subject {
@@ -34,6 +36,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   List<_Subject> _subjects = [];
   List<Place> _places = [];
+  List<SharedPin> _pins = [];
   String? _subjectId;
   List<String> _days = [];
   String? _day;
@@ -51,6 +54,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   Future<void> _init() async {
     _places = await _safe(PlacesService.list(), <Place>[]);
+    // Shared pins (theirs and mine) name otherwise-unnamed stops.
+    _pins = [
+      ...await _safe(SharedPlacesService.sharedWithMe(), <SharedPin>[]),
+      ...await _safe(SharedPlacesService.mineShared(), <SharedPin>[]),
+    ];
     // Build the subject list: me first, then contacts (nickname-resolved).
     final me = AuthService.currentUser;
     final subjects = <_Subject>[];
@@ -71,6 +79,13 @@ class _HistoryScreenState extends State<HistoryScreen> {
     } catch (_) {}
 
     _subjects = subjects;
+    // Opened for a specific person (e.g. from the map's contact sheet) who
+    // isn't in the list — contacts failed to load, or they've since unpaired:
+    // still show their history rather than break the Person dropdown.
+    final initial = widget.initialSubjectId;
+    if (initial != null && !subjects.any((s) => s.id == initial)) {
+      subjects.add(_Subject(initial, 'Contact'));
+    }
     _subjectId = widget.initialSubjectId ??
         (subjects.isNotEmpty ? subjects.first.id : null);
     if (mounted) setState(() {});
@@ -382,30 +397,35 @@ class _HistoryScreenState extends State<HistoryScreen> {
     // The scrubber's current position.
     if (_scrub >= 0 && _scrub < _points.length) {
       final p = _points[_scrub];
+      // The dot sits exactly on the point; the time label floats above it.
       markers.add(Marker(
         point: LatLng(p.lat, p.lng),
         width: 120,
-        height: 46,
-        alignment: Alignment.topCenter,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
+        height: 64,
+        child: Stack(
+          alignment: Alignment.center,
+          clipBehavior: Clip.none,
           children: [
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(8),
-                boxShadow: const [
-                  BoxShadow(blurRadius: 3, color: Colors.black26)
-                ],
-              ),
-              child: Text(_hm(p.t),
-                  style: const TextStyle(
-                      fontSize: 11,
-                      color: Brand.slate,
-                      fontWeight: FontWeight.w600)),
-            ),
             const Icon(Icons.circle, size: 14, color: Brand.slate),
+            Transform.translate(
+              offset: const Offset(0, -20),
+              child: Container(
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(8),
+                  boxShadow: const [
+                    BoxShadow(blurRadius: 3, color: Colors.black26)
+                  ],
+                ),
+                child: Text(_hm(p.t),
+                    style: const TextStyle(
+                        fontSize: 11,
+                        color: Brand.slate,
+                        fontWeight: FontWeight.w600)),
+              ),
+            ),
           ],
         ),
       ));
@@ -511,15 +531,29 @@ class _HistoryScreenState extends State<HistoryScreen> {
     switch (e) {
       case Stay():
         final named = e.place != null;
+        final pin =
+            named ? null : HistoryTimeline.pinNear(_pins, e.lat, e.lng);
         return ListTile(
           dense: true,
-          leading: Icon(named ? Icons.place : Icons.place_outlined,
+          leading: Icon(
+              named
+                  ? Icons.place
+                  : pin != null
+                      ? Icons.push_pin_outlined
+                      : Icons.place_outlined,
               color: named ? Brand.lichen : Brand.stone),
-          title: Text(e.place?.name ?? 'Stopped',
+          title: Text(e.place?.name ?? pin?.name ?? 'Stopped',
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(e.duration.inMinutes < 1
               ? 'Seen at ${_hm(e.start)}'
               : '${_span(e.start, e.end)} · ${_dur(e.duration)}'),
+          trailing: named
+              ? null
+              : IconButton(
+                  tooltip: 'Save as place',
+                  icon: const Icon(Icons.add_location_alt_outlined),
+                  onPressed: () => _saveAsPlace(e),
+                ),
           onTap: () => _focusStay(e),
         );
       case Move():
@@ -545,6 +579,20 @@ class _HistoryScreenState extends State<HistoryScreen> {
     try {
       _map.move(LatLng(s.lat, s.lng), 16);
     } catch (_) {}
+  }
+
+  /// Open the place editor at an unnamed stop; once saved, re-derive the
+  /// timeline so the stop picks up its new name.
+  Future<void> _saveAsPlace(Stay s) async {
+    final saved = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+            builder: (_) =>
+                PlaceEditorScreen(initialCenter: LatLng(s.lat, s.lng))));
+    if (saved != true || !mounted) return;
+    _places = await _safe(PlacesService.list(), _places);
+    if (!mounted) return;
+    setState(() => _timeline = HistoryTimeline.build(_points, _places));
   }
 
   void _focusMove(Move m) {

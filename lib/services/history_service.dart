@@ -5,6 +5,7 @@ import 'auth_service.dart';
 import 'crypto_service.dart';
 import 'places_service.dart';
 import 'prefs.dart';
+import 'shared_places_service.dart';
 
 /// One recorded position in a subject's trail.
 class HistoryPoint {
@@ -445,6 +446,21 @@ abstract final class HistoryTimeline {
 
   /// Minimum time lingering in an unnamed spot for it to count as a stay.
   static const minStay = Duration(minutes: 5);
+
+  /// The shared pin nearest [lat]/[lng] within [stayRadiusMeters], or null —
+  /// used to name an otherwise-unnamed stop. Pure.
+  static SharedPin? pinNear(List<SharedPin> pins, double lat, double lng) {
+    SharedPin? best;
+    var bestDist = stayRadiusMeters;
+    for (final p in pins) {
+      final d = PlacesService.distanceMeters(p.lat, p.lng, lat, lng);
+      if (d <= bestDist) {
+        best = p;
+        bestDist = d;
+      }
+    }
+    return best;
+  }
 
   /// Total length of a trail in metres (points assumed time-sorted).
   static double pathLength(List<HistoryPoint> pts) {
