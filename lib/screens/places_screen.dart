@@ -1,11 +1,16 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
+import 'package:pocketbase/pocketbase.dart';
 import '../services/geofence_monitor.dart';
 import '../services/location_service.dart';
+import '../services/nickname_service.dart';
 import '../services/notification_service.dart';
+import '../services/pairing_service.dart';
 import '../services/places_service.dart';
+import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
+import 'shared_pins_screen.dart';
 
 /// Manage my places (Home, Work…). Places sync (encrypted-to-self) and drive the
 /// on-device arrive/leave alerts for contacts. The server can't read them.
@@ -45,6 +50,92 @@ class _PlacesScreenState extends State<PlacesScreen> {
     if (saved == true) await _load();
   }
 
+  /// Share a place as a pin to selected contacts (encrypted per recipient).
+  Future<void> _sharePlace(Place p) async {
+    final List<RecordModel> contacts;
+    try {
+      contacts = await PairingService.myContacts();
+    } catch (_) {
+      return;
+    }
+    if (!mounted) return;
+    if (contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No contacts to share with yet.')));
+      return;
+    }
+    final nicks = await NicknameService.all();
+    // Build (peerId, pubKey, name), skipping any without a key.
+    final options = <({String id, String pubKey, String name})>[];
+    for (final c in contacts) {
+      final peerId = c.getStringValue('peer');
+      final pubKey = c.getStringValue('peer_pubkey');
+      if (peerId.isEmpty || pubKey.isEmpty) continue;
+      options.add((
+        id: peerId,
+        pubKey: pubKey,
+        name: NicknameService.resolveName(
+            alias: nicks[peerId],
+            peerName:
+                await PairingService.decryptName(c.getStringValue('peer_name'))),
+      ));
+    }
+    if (!mounted) return;
+    final selected = <String>{};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text('Share "${p.name}" with…'),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final o in options)
+                  CheckboxListTile(
+                    value: selected.contains(o.id),
+                    title: Text(o.name),
+                    onChanged: (v) => setLocal(() =>
+                        v == true ? selected.add(o.id) : selected.remove(o.id)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: selected.isEmpty
+                    ? null
+                    : () => Navigator.pop(context, true),
+                child: const Text('Share')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true || selected.isEmpty) return;
+    final recipients = [
+      for (final o in options)
+        if (selected.contains(o.id)) (id: o.id, pubKey: o.pubKey)
+    ];
+    try {
+      await SharedPlacesService.share(
+          name: p.name, lat: p.lat, lng: p.lng, recipients: recipients);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Shared "${p.name}" with ${recipients.length} contact${recipients.length == 1 ? '' : 's'}.')));
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Couldn't share: $e")));
+      }
+    }
+  }
+
   Future<void> _delete(Place p) async {
     final ok = await showDialog<bool>(
       context: context,
@@ -74,7 +165,17 @@ class _PlacesScreenState extends State<PlacesScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Places')),
+      appBar: AppBar(
+        title: const Text('Places'),
+        actions: [
+          IconButton(
+            tooltip: 'Shared pins',
+            icon: const Icon(Icons.ios_share),
+            onPressed: () => Navigator.push(context,
+                MaterialPageRoute(builder: (_) => const SharedPinsScreen())),
+          ),
+        ],
+      ),
       floatingActionButton: FloatingActionButton.extended(
         onPressed: () => _edit(),
         icon: const Icon(Icons.add_location_alt),
@@ -144,12 +245,21 @@ class _PlacesScreenState extends State<PlacesScreen> {
           ),
           onTap: () => _edit(p),
           trailing: PopupMenuButton<String>(
-            onSelected: (v) => v == 'edit' ? _edit(p) : _delete(p),
+            onSelected: (v) => switch (v) {
+              'edit' => _edit(p),
+              'share' => _sharePlace(p),
+              _ => _delete(p),
+            },
             itemBuilder: (context) => const [
               PopupMenuItem(
                   value: 'edit',
                   child: ListTile(
                       leading: Icon(Icons.edit), title: Text('Edit'))),
+              PopupMenuItem(
+                  value: 'share',
+                  child: ListTile(
+                      leading: Icon(Icons.ios_share),
+                      title: Text('Share with contacts'))),
               PopupMenuItem(
                   value: 'delete',
                   child: ListTile(

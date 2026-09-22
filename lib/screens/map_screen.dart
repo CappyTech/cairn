@@ -10,6 +10,7 @@ import '../services/location_sharing_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../services/presence.dart';
+import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
@@ -30,6 +31,7 @@ class _MapScreenState extends State<MapScreen> {
   Position? _lastPos;
   Map<String, ContactLocation> _contacts = {};
   List<Place> _places = [];
+  List<SharedPin> _sharedPins = [];
   String? _error;
   bool _loading = true;
 
@@ -57,6 +59,10 @@ class _MapScreenState extends State<MapScreen> {
     try {
       final places = await PlacesService.list();
       if (mounted) setState(() => _places = places);
+    } catch (_) {}
+    try {
+      final pins = await SharedPlacesService.sharedWithMe();
+      if (mounted) setState(() => _sharedPins = pins);
     } catch (_) {}
   }
 
@@ -219,6 +225,59 @@ class _MapScreenState extends State<MapScreen> {
           ),
       ];
 
+  /// Pins contacts have shared with me — a distinct bookmark marker with the
+  /// sharer + pin name (e.g. "Alice · Grand Hotel").
+  List<Marker> _sharedPinMarkers() => [
+        for (final p in _sharedPins)
+          Marker(
+            point: LatLng(p.lat, p.lng),
+            width: 200,
+            height: 60,
+            alignment: Alignment.topCenter,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(10),
+                    boxShadow: const [
+                      BoxShadow(
+                          blurRadius: 4,
+                          color: Colors.black26,
+                          offset: Offset(0, 1)),
+                    ],
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      const Icon(Icons.push_pin, size: 13, color: Brand.lichen),
+                      const SizedBox(width: 4),
+                      Flexible(
+                        child: Text(
+                          p.sharerName.isEmpty
+                              ? p.name
+                              : '${p.sharerName} · ${p.name}',
+                          style: const TextStyle(
+                              fontSize: 11,
+                              color: Brand.slate,
+                              fontWeight: FontWeight.w600),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const Icon(Icons.push_pin, color: Brand.lichen, size: 26, shadows: [
+                  Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
+                ]),
+              ],
+            ),
+          ),
+      ];
+
   List<Marker> _markers() {
     final markers = <Marker>[];
     for (final c in _contacts.values) {
@@ -329,6 +388,7 @@ class _MapScreenState extends State<MapScreen> {
               ),
               CircleLayer(circles: _placeCircles()),
               MarkerLayer(markers: _placeMarkers()),
+              MarkerLayer(markers: _sharedPinMarkers()),
               MarkerLayer(markers: _markers()),
               const RichAttributionWidget(
                 attributions: [
