@@ -1,21 +1,30 @@
 import 'dart:async';
 import 'dart:math' as math;
 import 'dart:ui' as ui; // latlong2 also exports a `Path`; disambiguate the UI one
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:pocketbase/pocketbase.dart';
 import '../services/auth_service.dart';
+import '../services/background_share.dart';
 import '../services/history_service.dart';
 import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
+import '../services/nickname_service.dart';
 import '../services/notification_service.dart';
+import '../services/pairing_service.dart';
 import '../services/places_service.dart';
 import '../services/prefs.dart';
 import '../services/presence.dart';
 import '../services/shared_places_service.dart';
 import '../services/stale_alert_store.dart';
+import '../widgets/background_share_ux.dart';
 import '../theme/brand.dart';
+import 'history_screen.dart';
+import 'places_screen.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
 /// (decrypted from their encrypted shares), and shares this device's location
@@ -34,6 +43,7 @@ class _MapScreenState extends State<MapScreen> {
   LatLng? _me;
   Position? _lastPos;
   double? _heading; // GPS course to point my direction cone at; null = hide it
+  bool _follow = false; // keep the map centred on me as I move
   Map<String, ContactLocation> _contacts = {};
   List<Place> _places = [];
   List<SharedPin> _sharedPins = [];
@@ -120,7 +130,12 @@ class _MapScreenState extends State<MapScreen> {
       _me = LatLng(p.latitude, p.longitude);
       _heading = coneHeading(speed: p.speed, heading: p.heading);
     });
-    if (recenter) _map.move(_me!, 14);
+    if (recenter) {
+      _map.move(_me!, 14);
+    } else if (_follow) {
+      // Follow mode: keep me centred as I move, without changing zoom.
+      _map.move(_me!, _map.camera.zoom);
+    }
     // Note: no publish here. Shares go out on a fixed 30s cadence (the
     // heartbeat), not per movement, so the server can't infer our movement /
     // activity timing from share-update times. The first fix is shared once in
@@ -290,7 +305,10 @@ class _MapScreenState extends State<MapScreen> {
         width: 190,
         height: 76,
         alignment: Alignment.topCenter,
-        child: Column(
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: () => _openContactSheet(c),
+          child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Name + freshness chip, on-brand: slate text on a soft card.
@@ -330,6 +348,7 @@ class _MapScreenState extends State<MapScreen> {
               Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
             ]),
           ],
+          ),
         ),
       ));
     }
@@ -340,7 +359,11 @@ class _MapScreenState extends State<MapScreen> {
         // dot stays centred on the point (default centre alignment).
         width: 56,
         height: 56,
-        child: _meMarker(),
+        child: GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: _openMeSheet,
+          child: _meMarker(),
+        ),
       ));
     }
     return markers;
@@ -397,6 +420,7 @@ class _MapScreenState extends State<MapScreen> {
             options: MapOptions(
               initialCenter: _me ?? _fallback,
               initialZoom: _me == null ? 3 : 14,
+              onLongPress: (_, point) => _onLongPress(point),
             ),
             children: [
               // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
@@ -462,14 +486,506 @@ class _MapScreenState extends State<MapScreen> {
       ),
       floatingActionButton: _me == null
           ? null
-          : FloatingActionButton(
-              tooltip: 'Centre on me',
-              onPressed: () => _map.move(_me!, 15),
-              child: const Icon(Icons.my_location),
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // Follow: keep the map on me as I move (pairs with the heading
+                // cone). Highlighted when on.
+                FloatingActionButton.small(
+                  heroTag: 'follow',
+                  tooltip: _follow ? 'Stop following' : 'Follow me',
+                  backgroundColor: _follow ? Brand.slate : null,
+                  foregroundColor: _follow ? Colors.white : null,
+                  onPressed: _toggleFollow,
+                  child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
+                ),
+                const SizedBox(height: 8),
+                // Frame me + everyone currently sharing.
+                if (_contacts.isNotEmpty)
+                  FloatingActionButton.small(
+                    heroTag: 'fit',
+                    tooltip: 'Fit everyone',
+                    onPressed: _fitEveryone,
+                    child: const Icon(Icons.zoom_out_map),
+                  ),
+                if (_contacts.isNotEmpty) const SizedBox(height: 8),
+                FloatingActionButton(
+                  heroTag: 'centre',
+                  tooltip: 'Centre on me',
+                  onPressed: () => _map.move(_me!, 15),
+                  child: const Icon(Icons.my_location),
+                ),
+              ],
             ),
     );
   }
+
+  void _toggleFollow() {
+    setState(() => _follow = !_follow);
+    if (_follow && _me != null) _map.move(_me!, _map.camera.zoom);
+  }
+
+  /// Frame me + every sharing contact on screen.
+  void _fitEveryone() {
+    final targets = fitTargets(
+      me: _me,
+      contacts: [for (final c in _contacts.values) LatLng(c.lat, c.lng)],
+    );
+    if (targets.isEmpty) return;
+    if (targets.length == 1) {
+      _map.move(targets.first, 15);
+      return;
+    }
+    _map.fitCamera(CameraFit.coordinates(
+      coordinates: targets,
+      padding: const EdgeInsets.all(64),
+      maxZoom: 16,
+    ));
+  }
+
+  /// Long-press on the map: offer to add a place or share a pin at that point.
+  Future<void> _onLongPress(LatLng point) async {
+    final choice = await showModalBottomSheet<String>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.add_location_alt),
+              title: const Text('Add a place here'),
+              subtitle: const Text('A private geofence for arrive/leave alerts.'),
+              onTap: () => Navigator.pop(ctx, 'place'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.push_pin_outlined),
+              title: const Text('Share a pin here'),
+              subtitle: const Text('Send this spot to chosen contacts.'),
+              onTap: () => Navigator.pop(ctx, 'pin'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (!mounted) return;
+    if (choice == 'place') {
+      final saved = await Navigator.push<bool>(
+        context,
+        MaterialPageRoute(
+            builder: (_) => PlaceEditorScreen(initialCenter: point)),
+      );
+      if (saved == true) await _loadPlaces();
+    } else if (choice == 'pin') {
+      await _sharePinAt(point);
+    }
+  }
+
+  /// Share a one-off pin at [point] with selected contacts (encrypted per
+  /// recipient; the server can't read the name or coordinates).
+  Future<void> _sharePinAt(LatLng point) async {
+    final nameCtl = TextEditingController(text: 'Pin');
+    final name = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Name this pin'),
+        content: TextField(
+          controller: nameCtl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+              hintText: 'e.g. Meet here, My hotel',
+              border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, nameCtl.text.trim()),
+              child: const Text('Next')),
+        ],
+      ),
+    );
+    if (name == null || name.isEmpty || !mounted) return;
+
+    final recipients = await _pickContacts('Share "$name" with…');
+    if (recipients == null || recipients.isEmpty || !mounted) return;
+    try {
+      await SharedPlacesService.share(
+        name: name,
+        lat: point.latitude,
+        lng: point.longitude,
+        recipients: recipients,
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text(
+                'Shared "$name" with ${recipients.length} contact${recipients.length == 1 ? '' : 's'}.')));
+      }
+      await _loadPlaces(); // refresh my own shared-pin markers
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text("Couldn't share: $e")));
+      }
+    }
+  }
+
+  /// A multi-select contact picker; returns the chosen `(id, pubKey)` list, or
+  /// null if cancelled. Shared by the pin-sharing flow.
+  Future<List<({String id, String pubKey})>?> _pickContacts(
+      String title) async {
+    final List<RecordModel> contacts;
+    try {
+      contacts = await PairingService.myContacts();
+    } catch (_) {
+      return null;
+    }
+    if (!mounted) return null;
+    if (contacts.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('No contacts to share with yet.')));
+      return null;
+    }
+    final nicks = await NicknameService.all();
+    final options = <({String id, String pubKey, String name})>[];
+    for (final c in contacts) {
+      final peerId = c.getStringValue('peer');
+      final pubKey = c.getStringValue('peer_pubkey');
+      if (peerId.isEmpty || pubKey.isEmpty) continue;
+      options.add((
+        id: peerId,
+        pubKey: pubKey,
+        name: NicknameService.resolveName(
+            alias: nicks[peerId],
+            peerName:
+                await PairingService.decryptName(c.getStringValue('peer_name'))),
+      ));
+    }
+    if (!mounted) return null;
+    final selected = <String>{};
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setLocal) => AlertDialog(
+          title: Text(title),
+          content: SizedBox(
+            width: double.maxFinite,
+            child: ListView(
+              shrinkWrap: true,
+              children: [
+                for (final o in options)
+                  CheckboxListTile(
+                    value: selected.contains(o.id),
+                    title: Text(o.name),
+                    onChanged: (v) => setLocal(() =>
+                        v == true ? selected.add(o.id) : selected.remove(o.id)),
+                  ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed:
+                    selected.isEmpty ? null : () => Navigator.pop(context, true),
+                child: const Text('Share')),
+          ],
+        ),
+      ),
+    );
+    if (ok != true) return null;
+    return [
+      for (final o in options)
+        if (selected.contains(o.id)) (id: o.id, pubKey: o.pubKey)
+    ];
+  }
+
+  /// Tap a contact pin → a sheet with their freshness, where they are, distance,
+  /// and the per-contact controls (precision / pause, rename, history).
+  Future<void> _openContactSheet(ContactLocation c) async {
+    RecordModel? rec;
+    try {
+      for (final r in await PairingService.myContacts()) {
+        if (r.getStringValue('peer') == c.senderId) {
+          rec = r;
+          break;
+        }
+      }
+    } catch (_) {/* offline — the sheet still shows position info */}
+    if (!mounted) return;
+
+    final at = PlacesService.placeContaining(_places, c.lat, c.lng);
+    final where = c.label ?? (at != null ? 'at ${at.name}' : null);
+    final distance = _me == null
+        ? null
+        : PlacesService.distanceMeters(
+            _me!.latitude, _me!.longitude, c.lat, c.lng);
+    var name = c.name;
+
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) {
+          final pres = Presence.describe(updated: c.updated, now: DateTime.now());
+          final precision = rec?.getStringValue('precision') ?? 'precise';
+          final keyChanged = rec?.getStringValue('status') == 'key_changed';
+          return SafeArea(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(children: [
+                    Container(
+                      width: 10,
+                      height: 10,
+                      margin: const EdgeInsets.only(right: 8),
+                      decoration: BoxDecoration(
+                          color: _presenceColor(pres.level),
+                          shape: BoxShape.circle),
+                    ),
+                    Expanded(
+                      child: Text(name,
+                          style: const TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.w600)),
+                    ),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(
+                    [
+                      pres.label,
+                      ?where,
+                      if (distance != null) _formatDistance(distance),
+                      if (c.approximate) 'approximate',
+                    ].join(' · '),
+                    style: const TextStyle(color: Brand.stone, fontSize: 13),
+                  ),
+                  const SizedBox(height: 16),
+                  if (keyChanged)
+                    Padding(
+                      padding: const EdgeInsets.only(bottom: 12),
+                      child: Text(
+                        "This contact's security key changed — re-scan in "
+                        'person to confirm before sharing resumes.',
+                        style: TextStyle(
+                            color: Theme.of(ctx).colorScheme.error,
+                            fontSize: 12),
+                      ),
+                    ),
+                  const Text('How precisely I share with them',
+                      style: TextStyle(fontSize: 12, color: Brand.stone)),
+                  const SizedBox(height: 6),
+                  SegmentedButton<String>(
+                    segments: const [
+                      ButtonSegment(
+                          value: 'precise',
+                          label: Text('Precise'),
+                          icon: Icon(Icons.gps_fixed, size: 16)),
+                      ButtonSegment(
+                          value: 'approximate',
+                          label: Text('~1 km'),
+                          icon: Icon(Icons.blur_on, size: 16)),
+                      ButtonSegment(
+                          value: 'off',
+                          label: Text('Paused'),
+                          icon: Icon(Icons.pause, size: 16)),
+                    ],
+                    selected: {precision},
+                    onSelectionChanged: rec == null
+                        ? null
+                        : (s) async {
+                            await PairingService.setPrecision(
+                                rec!.id, c.senderId, s.first);
+                            rec!.set('precision', s.first);
+                            setSheet(() {});
+                          },
+                  ),
+                  const SizedBox(height: 8),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () async {
+                            final newName = await _renamePrompt(name);
+                            if (newName == null) return;
+                            await NicknameService.set(c.senderId, newName);
+                            if (ctx.mounted) {
+                              setSheet(() => name =
+                                  newName.isEmpty ? c.name : newName);
+                            }
+                          },
+                          icon: const Icon(Icons.drive_file_rename_outline),
+                          label: const Text('Rename'),
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: () {
+                            Navigator.pop(ctx);
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (_) => const HistoryScreen()));
+                          },
+                          icon: const Icon(Icons.timeline),
+                          label: const Text('History'),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  /// Tap my own dot → a sheet to set my broadcast status and toggle background
+  /// sharing, without leaving the map.
+  Future<void> _openMeSheet() async {
+    var status = await Prefs.sharedStatus() ?? '';
+    var bgEnabled = _bgSupported ? await BackgroundShare.isEnabled() : false;
+    if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setSheet) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('You',
+                    style:
+                        TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 12),
+                ListTile(
+                  contentPadding: EdgeInsets.zero,
+                  leading: const Icon(Icons.label_outline),
+                  title: const Text('Status'),
+                  subtitle: Text(
+                    status.isEmpty
+                        ? 'Off — set a label contacts see by your pin.'
+                        : 'Contacts see: "$status"',
+                    style: const TextStyle(fontSize: 12),
+                  ),
+                  trailing: Icon(
+                      status.isEmpty ? Icons.edit_outlined : Icons.close),
+                  onTap: () async {
+                    if (status.isNotEmpty) {
+                      await Prefs.setSharedStatus('');
+                      setSheet(() => status = '');
+                      return;
+                    }
+                    final v = await _statusPrompt(status);
+                    if (v == null) return;
+                    await Prefs.setSharedStatus(v);
+                    if (ctx.mounted) setSheet(() => status = v.trim());
+                  },
+                ),
+                if (_bgSupported)
+                  SwitchListTile(
+                    contentPadding: EdgeInsets.zero,
+                    value: bgEnabled,
+                    secondary: const Icon(Icons.share_location),
+                    title: const Text('Share in the background'),
+                    subtitle: Text(
+                      bgEnabled
+                          ? 'On — sharing continues when the app is closed.'
+                          : 'Off — you only share while the app is open.',
+                      style: const TextStyle(fontSize: 12),
+                    ),
+                    onChanged: (on) async {
+                      final now =
+                          await BackgroundShareUx.toggle(ctx, on: on);
+                      if (ctx.mounted) setSheet(() => bgEnabled = now);
+                    },
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  bool get _bgSupported =>
+      !kIsWeb &&
+      (defaultTargetPlatform == TargetPlatform.android ||
+          defaultTargetPlatform == TargetPlatform.iOS);
+
+  Future<String?> _renamePrompt(String current) {
+    final ctl = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Rename contact'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          decoration: const InputDecoration(
+              hintText: 'e.g. Mum, Work', border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  Future<String?> _statusPrompt(String current) {
+    final ctl = TextEditingController(text: current);
+    return showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Set status'),
+        content: TextField(
+          controller: ctl,
+          autofocus: true,
+          textCapitalization: TextCapitalization.sentences,
+          decoration: const InputDecoration(
+              hintText: "e.g. Hotel, Airport", border: OutlineInputBorder()),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(ctx, ctl.text.trim()),
+              child: const Text('Save')),
+        ],
+      ),
+    );
+  }
+
+  static String _formatDistance(double m) => m >= 1000
+      ? '${(m / 1000).toStringAsFixed(m % 1000 < 100 ? 0 : 1)} km away'
+      : '${m.round()} m away';
 }
+
+/// The points the "fit everyone" control should frame: me (when known) plus
+/// every contact currently on the map. Empty when there's nothing to frame.
+/// Pure and side-effect-free, so it's unit-tested without a map controller.
+List<LatLng> fitTargets({LatLng? me, required Iterable<LatLng> contacts}) => [
+      ?me,
+      ...contacts,
+    ];
 
 /// The GPS course to draw my direction cone at, or null when we shouldn't show
 /// one. The course from geolocator is course-over-ground, not a compass, so

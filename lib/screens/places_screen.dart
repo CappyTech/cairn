@@ -275,7 +275,10 @@ class _PlacesScreenState extends State<PlacesScreen> {
 /// it, set the radius, and choose whether it raises alerts.
 class PlaceEditorScreen extends StatefulWidget {
   final Place? place;
-  const PlaceEditorScreen({super.key, this.place});
+  /// For a NEW place, the point to start centred on (e.g. a spot long-pressed
+  /// on the map). Ignored when editing an existing [place].
+  final LatLng? initialCenter;
+  const PlaceEditorScreen({super.key, this.place, this.initialCenter});
 
   @override
   State<PlaceEditorScreen> createState() => _PlaceEditorScreenState();
@@ -304,6 +307,9 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
       _radius = p.radiusMeters;
       _alerts = p.alerts;
       _shareLabel = p.shareLabel;
+    } else if (widget.initialCenter != null) {
+      // A spot the user picked on the map — start there, don't chase GPS.
+      _center = widget.initialCenter!;
     } else {
       _center = _fallback;
       _useMyLocation(recenter: true); // start on the user where possible
