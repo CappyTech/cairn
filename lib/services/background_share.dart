@@ -13,6 +13,10 @@ import 'bg_strategy.dart';
 import 'places_service.dart';
 import 'geofence_monitor.dart';
 import 'history_service.dart';
+import 'pairing_service.dart';
+import 'prefs.dart';
+import 'stale_alert_store.dart';
+import 'notification_service.dart';
 
 /// Outcome of trying to turn on background sharing.
 enum BgEnableResult {
@@ -203,6 +207,53 @@ void onStart(ServiceInstance service) async {
     }
   }
 
+  // Reciprocate any pairing that landed while the app was closed, and raise a
+  // content-free "new contact" alert for each — the same notification the
+  // foreground shows, so a scan completed with the app shut isn't missed until
+  // next open. Only creates contacts for proof-of-scan requests (the pairing
+  // service enforces that); the notification carries a name at most.
+  Future<void> checkPairingsOnce() async {
+    try {
+      final newlyPaired = await PairingService.processPendingRequests();
+      for (final name in newlyPaired) {
+        await NotificationService.show(
+          id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
+          title: 'New contact',
+          body: "You're now connected with $name.",
+        );
+      }
+    } catch (_) {
+      // offline / not signed in — skip this tick.
+    }
+  }
+
+  // Raise a "contact went quiet" alert while the app is closed, edge-triggered
+  // off the shared persisted state so it agrees with the foreground map screen
+  // (no double-fire) and re-arms once they're fresh again. Reads contacts'
+  // last-share times, which are already fetched for the geofence check.
+  Future<void> checkStaleOnce() async {
+    try {
+      final byId = await LocationSharingService.fetchOnce();
+      final updatedById = {
+        for (final e in byId.entries) e.key: e.value.updated,
+      };
+      final toNotify = await StaleAlertStore.evaluate(
+        updatedById: updatedById,
+        now: DateTime.now(),
+      );
+      for (final id in toNotify) {
+        final name = byId[id]?.name ?? 'A contact';
+        await NotificationService.show(
+          id: NotificationService.idFor('stale:$id'),
+          title: 'Contact went quiet',
+          body: "$name hasn't shared their location in a while.",
+        );
+      }
+    } catch (_) {
+      // offline / no contacts — skip this tick.
+    }
+  }
+
   // Self-rescheduling tick: the interval can change between ticks as the
   // battery drains or the phone is plugged in, so we re-arm a one-shot Timer
   // each time rather than a fixed Timer.periodic.
@@ -217,6 +268,12 @@ void onStart(ServiceInstance service) async {
     }
     await publishOnce(strategy.accuracy);
     await checkGeofencesOnce();
+    // Content-free activity alerts (new pairing, contact went quiet) while the
+    // app is closed — off entirely if the user turned them off.
+    if (await Prefs.activityAlerts()) {
+      await checkPairingsOnce();
+      await checkStaleOnce();
+    }
     // Persist this tick's buffered history points (mine + contacts').
     await HistoryService.flush();
     tickTimer = Timer(strategy.interval, tick);

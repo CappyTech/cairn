@@ -9,8 +9,9 @@ import '../services/location_service.dart';
 import '../services/location_sharing_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
-import '../services/presence.dart';
+import '../services/prefs.dart';
 import '../services/shared_places_service.dart';
+import '../services/stale_alert_store.dart';
 import '../theme/brand.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
@@ -39,13 +40,6 @@ class _MapScreenState extends State<MapScreen> {
   Future<void> Function()? _unsub;
   Timer? _heartbeat;
 
-  // Peer ids we've already alerted about going quiet, so a still-offline
-  // contact doesn't re-notify every tick. Cleared when they come back fresh.
-  final Set<String> _staleNotified = {};
-  // Skip the very first evaluation: contacts loaded already-stale on open
-  // shouldn't fire an alert (you didn't just "lose" them this session).
-  bool _presenceSeeded = false;
-
   @override
   void initState() {
     super.initState();
@@ -72,7 +66,7 @@ class _MapScreenState extends State<MapScreen> {
     _unsub ??= await LocationSharingService.subscribe((map) {
       if (!mounted) return;
       setState(() => _contacts = map);
-      _checkStale();
+      unawaited(_checkStale());
     });
 
     try {
@@ -93,7 +87,7 @@ class _MapScreenState extends State<MapScreen> {
         if (_lastPos != null) _publish(_lastPos!);
         // Staleness is time-based, so re-evaluate on a timer (not just on
         // incoming shares) to catch a contact who simply stopped sharing.
-        _checkStale();
+        unawaited(_checkStale());
       });
     } catch (e) {
       if (!mounted) return;
@@ -135,31 +129,25 @@ class _MapScreenState extends State<MapScreen> {
 
   /// Fire a one-off local notification when a contact crosses into "stale"
   /// (stopped sharing for a while), and re-arm once they're fresh again. The
-  /// first pass seeds the baseline so contacts already quiet on open don't
-  /// alert — only genuine transitions this session do.
-  void _checkStale() {
-    final now = DateTime.now();
+  /// edge-trigger state is the shared, persisted [StaleAlertStore] — the same
+  /// one the background isolate uses — so the two never double-fire, and a
+  /// contact already alerted about stays quiet across a restart. The first pass
+  /// seeds the baseline (contacts already quiet on open don't alert). Silent
+  /// when the user has turned activity alerts off.
+  Future<void> _checkStale() async {
+    if (!await Prefs.activityAlerts()) return;
+    // Snapshot now — the async gaps below mean _contacts could change under us.
     final updatedById = {
       for (final e in _contacts.entries) e.key: e.value.updated,
     };
-    _staleNotified.removeAll(Presence.freshAgain(
+    final names = {for (final e in _contacts.entries) e.key: e.value.name};
+    final toNotify = await StaleAlertStore.evaluate(
       updatedById: updatedById,
-      alreadyNotified: _staleNotified,
-      now: now,
-    ));
-    final newly = Presence.newlyStale(
-      updatedById: updatedById,
-      alreadyNotified: _staleNotified,
-      now: now,
+      now: DateTime.now(),
     );
-    _staleNotified.addAll(newly);
-    if (!_presenceSeeded) {
-      _presenceSeeded = true; // adopt current state as baseline, don't alert
-      return;
-    }
-    for (final id in newly) {
-      final name = _contacts[id]?.name ?? 'A contact';
-      NotificationService.show(
+    for (final id in toNotify) {
+      final name = names[id] ?? 'A contact';
+      await NotificationService.show(
         id: NotificationService.idFor('stale:$id'),
         title: 'Contact went quiet',
         body: "$name hasn't shared their location in a while.",

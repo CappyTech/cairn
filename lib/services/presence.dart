@@ -61,4 +61,54 @@ class Presence {
       return now.difference(updated) < threshold;
     }).toSet();
   }
+
+  /// One pass of the edge-triggered stale decision, folding [freshAgain] +
+  /// [newlyStale] into a single pure step so the foreground (map screen) and
+  /// the background isolate run *identical* logic over one shared, persisted
+  /// state — the only way they don't double-fire or disagree.
+  ///
+  /// - [toNotify]: contacts that JUST crossed into stale and should alert now.
+  /// - [nextNotified]: the notified-set to persist (fresh-again ids dropped,
+  ///   newly-stale ids added).
+  /// - [nextSeeded]: always true — record that a baseline now exists.
+  ///
+  /// On the **first ever** pass ([seeded] == false) nothing is notified:
+  /// contacts already quiet when alerts were first switched on (or on a fresh
+  /// install / new server) are adopted as the baseline, not reported as if they
+  /// "just" went quiet. They're still tracked, so they re-arm normally once
+  /// they come back and go quiet again.
+  static ({Set<String> toNotify, Set<String> nextNotified, bool nextSeeded})
+      reconcile({
+    required Map<String, DateTime> updatedById,
+    required Set<String> alreadyNotified,
+    required bool seeded,
+    required DateTime now,
+    Duration threshold = staleAfter,
+  }) {
+    final carried = alreadyNotified.difference(freshAgain(
+      updatedById: updatedById,
+      alreadyNotified: alreadyNotified,
+      now: now,
+      threshold: threshold,
+    ));
+    final newly = newlyStale(
+      updatedById: updatedById,
+      alreadyNotified: carried,
+      now: now,
+      threshold: threshold,
+    );
+    if (!seeded) {
+      // Adopt everything currently stale as the baseline; alert on none of it.
+      return (
+        toNotify: <String>{},
+        nextNotified: carried.union(newly),
+        nextSeeded: true,
+      );
+    }
+    return (
+      toNotify: newly,
+      nextNotified: carried.union(newly),
+      nextSeeded: true,
+    );
+  }
 }

@@ -191,8 +191,19 @@ capability-token core as the mailbox model. So the safe first step was timing.
   creates the collection + a default record — set the window in the Admin UI
   (Collections → `server_config`); the Dockerfile now ships `pb_hooks/`.
   `services/history_policy.dart`.
-- **Notifications that respect privacy.** Push/local notifications for pair
-  requests and "contact went stale" without leaking content through the server.
+- ✅ **Notifications that respect privacy** *(done)*. Local (never
+  server-routed) notifications for a **new pairing** and a **contact going
+  quiet**, so nothing about them leaks through a push service — bodies are
+  content-free (a name at most, never a location). Both now fire **while the app
+  is closed** too: the background isolate reciprocates pending pairings and
+  runs the stale check each tick, not just the foreground screens. The
+  "contact went quiet" decision is edge-triggered off a **shared, persisted**
+  state (`services/stale_alert_store.dart` + the pure `Presence.reconcile`), so
+  the foreground map screen and the background isolate agree instead of
+  double-firing, and a contact already alerted about stays quiet across a
+  restart. A single **Activity alerts** switch (Prefs, default on) silences both
+  everywhere. `services/prefs.dart` (`activityAlerts`),
+  `services/stale_alert_store.dart`, `services/background_share.dart`.
 - **Contact management UX.** ✅ *Rename contacts done* — a local, per-device
   nickname (`services/nickname_service.dart`) overrides the contact's own name
   across the list and the map; kept entirely off the server and separate from

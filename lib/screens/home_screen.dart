@@ -45,6 +45,7 @@ class _HomeScreenState extends State<HomeScreen> {
   Future<void> Function()? _unsub;
   bool _bgEnabled = false;
   bool _approxOnly = false;
+  bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
 
   bool get _bgSupported =>
@@ -63,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen> {
       _bgEnabled = await BackgroundShare.isEnabled();
     }
     _approxOnly = await Prefs.approxOnly();
+    _activityAlerts = await Prefs.activityAlerts();
     _status = await Prefs.sharedStatus() ?? '';
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
@@ -80,12 +82,14 @@ class _HomeScreenState extends State<HomeScreen> {
     // know a new contact connected (a local, content-free notification).
     _unsub = await pb.collection('pair_requests').subscribe('*', (e) async {
       final newlyPaired = await PairingService.processPendingRequests();
-      for (final name in newlyPaired) {
-        await NotificationService.show(
-          id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
-          title: 'New contact',
-          body: "You're now connected with $name.",
-        );
+      if (await Prefs.activityAlerts()) {
+        for (final name in newlyPaired) {
+          await NotificationService.show(
+            id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
+            title: 'New contact',
+            body: "You're now connected with $name.",
+          );
+        }
       }
       await _refresh();
     });
@@ -619,6 +623,27 @@ class _HomeScreenState extends State<HomeScreen> {
                   _approxOnly
                       ? 'On — everyone sees a rough area (~1 km), overriding per-contact settings.'
                       : 'Off — precision is set per contact below.',
+                  style: const TextStyle(fontSize: 12),
+                ),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Card(
+              margin: EdgeInsets.zero,
+              child: SwitchListTile(
+                value: _activityAlerts,
+                onChanged: (v) async {
+                  await Prefs.setActivityAlerts(v);
+                  if (mounted) setState(() => _activityAlerts = v);
+                },
+                secondary: const Icon(Icons.notifications_active_outlined),
+                title: const Text('Activity alerts'),
+                subtitle: Text(
+                  _activityAlerts
+                      ? 'On — a local alert when a new contact connects or a '
+                          'contact goes quiet. Composed on your phone; nothing '
+                          'is sent to the server.'
+                      : 'Off — no pairing or contact-quiet alerts.',
                   style: const TextStyle(fontSize: 12),
                 ),
               ),

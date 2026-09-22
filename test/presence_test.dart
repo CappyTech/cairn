@@ -106,6 +106,91 @@ void main() {
     expect(newly, {'a'});
   });
 
+  group('Presence.reconcile', () {
+    test('first pass (unseeded) adopts a baseline and alerts on nobody', () {
+      final r = Presence.reconcile(
+        updatedById: {'a': agoMin(20), 'b': agoMin(1)},
+        alreadyNotified: {},
+        seeded: false,
+        now: now,
+      );
+      expect(r.toNotify, isEmpty); // already-quiet 'a' is baseline, not an alert
+      expect(r.nextNotified, {'a'}); // but it's tracked so it can re-arm later
+      expect(r.nextSeeded, isTrue);
+    });
+
+    test('seeded pass alerts on a contact that just went quiet', () {
+      final r = Presence.reconcile(
+        updatedById: {'a': agoMin(20), 'b': agoMin(1)},
+        alreadyNotified: {},
+        seeded: true,
+        now: now,
+      );
+      expect(r.toNotify, {'a'});
+      expect(r.nextNotified, {'a'});
+    });
+
+    test('does not re-alert a contact already notified', () {
+      final r = Presence.reconcile(
+        updatedById: {'a': agoMin(25)},
+        alreadyNotified: {'a'},
+        seeded: true,
+        now: now,
+      );
+      expect(r.toNotify, isEmpty);
+      expect(r.nextNotified, {'a'});
+    });
+
+    test('re-arms once a contact comes back fresh', () {
+      final r = Presence.reconcile(
+        updatedById: {'a': agoMin(1)},
+        alreadyNotified: {'a'},
+        seeded: true,
+        now: now,
+      );
+      expect(r.toNotify, isEmpty);
+      expect(r.nextNotified, isEmpty); // dropped → can alert again next time
+    });
+
+    test('full cycle across persisted state: quiet → silent → quiet alerts', () {
+      // Seed with a contact already quiet: no alert, but tracked.
+      var r = Presence.reconcile(
+        updatedById: {'a': agoMin(20)},
+        alreadyNotified: {},
+        seeded: false,
+        now: now,
+      );
+      expect(r.toNotify, isEmpty);
+
+      // Still quiet: no repeat alert.
+      r = Presence.reconcile(
+        updatedById: {'a': agoMin(30)},
+        alreadyNotified: r.nextNotified,
+        seeded: r.nextSeeded,
+        now: now,
+      );
+      expect(r.toNotify, isEmpty);
+
+      // Back fresh: cleared.
+      r = Presence.reconcile(
+        updatedById: {'a': agoMin(0)},
+        alreadyNotified: r.nextNotified,
+        seeded: r.nextSeeded,
+        now: now,
+      );
+      expect(r.nextNotified, isEmpty);
+
+      // Quiet again: now it alerts (the baseline no longer excuses it).
+      r = Presence.reconcile(
+        updatedById: {'a': agoMin(20)},
+        alreadyNotified: r.nextNotified,
+        seeded: r.nextSeeded,
+        now: now,
+      );
+      expect(r.toNotify, {'a'});
+    });
+  });
+
   group('Presence.describe', () {
     ({PresenceLevel level, String label}) at(Duration ago) =>
         Presence.describe(updated: now.subtract(ago), now: now);
