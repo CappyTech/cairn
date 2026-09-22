@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:math' as math;
+import 'dart:ui' as ui; // latlong2 also exports a `Path`; disambiguate the UI one
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -31,6 +33,7 @@ class _MapScreenState extends State<MapScreen> {
 
   LatLng? _me;
   Position? _lastPos;
+  double? _heading; // GPS course to point my direction cone at; null = hide it
   Map<String, ContactLocation> _contacts = {};
   List<Place> _places = [];
   List<SharedPin> _sharedPins = [];
@@ -113,7 +116,10 @@ class _MapScreenState extends State<MapScreen> {
       );
     }
     if (!mounted) return; // moving a disposed MapController throws
-    setState(() => _me = LatLng(p.latitude, p.longitude));
+    setState(() {
+      _me = LatLng(p.latitude, p.longitude);
+      _heading = coneHeading(speed: p.speed, heading: p.heading);
+    });
     if (recenter) _map.move(_me!, 14);
     // Note: no publish here. Shares go out on a fixed 30s cadence (the
     // heartbeat), not per movement, so the server can't infer our movement /
@@ -330,17 +336,44 @@ class _MapScreenState extends State<MapScreen> {
     if (_me != null) {
       markers.add(Marker(
         point: _me!,
-        width: 28,
-        height: 28,
-        child: _meDot(),
+        // Roomy enough for the direction cone to fan out around the dot; the
+        // dot stays centred on the point (default centre alignment).
+        width: 56,
+        height: 56,
+        child: _meMarker(),
       ));
     }
     return markers;
   }
 
+  /// This device's own position: the dot, plus a direction cone fanning out in
+  /// the way I'm heading when there's a live GPS course (i.e. while moving).
+  Widget _meMarker() {
+    final heading = _heading;
+    return Stack(
+      alignment: Alignment.center,
+      children: [
+        if (heading != null)
+          Transform.rotate(
+            // GPS heading is degrees clockwise from north; the cone is drawn
+            // pointing up (north), so rotating it clockwise by the heading
+            // aims it correctly on this north-up map.
+            angle: heading * math.pi / 180,
+            child: const CustomPaint(
+              size: Size(56, 56),
+              painter: _HeadingConePainter(),
+            ),
+          ),
+        _meDot(),
+      ],
+    );
+  }
+
   /// This device's own position: a slate dot with a white ring — a calm,
   /// on-brand take on the familiar "you are here" marker.
   Widget _meDot() => Container(
+        width: 22,
+        height: 22,
         decoration: BoxDecoration(
           color: Brand.slate,
           shape: BoxShape.circle,
@@ -436,4 +469,53 @@ class _MapScreenState extends State<MapScreen> {
             ),
     );
   }
+}
+
+/// The GPS course to draw my direction cone at, or null when we shouldn't show
+/// one. The course from geolocator is course-over-ground, not a compass, so
+/// it's only meaningful while actually moving; when still (or when the device
+/// reports no fix on heading) it comes through as -1 / NaN or with ~zero
+/// speed. Pure and side-effect-free, so the gate is unit-tested.
+double? coneHeading({
+  required double speed,
+  required double heading,
+  double minSpeed = 0.5, // m/s ≈ a slow walk
+}) {
+  if (speed.isNaN || speed < minSpeed) return null;
+  if (heading.isNaN || heading < 0 || heading > 360) return null;
+  return heading;
+}
+
+/// A soft wedge fanning "up" (north) from the centre, faded out at its far
+/// edge — rotated by the caller to point along the heading. On-brand slate,
+/// low alpha so it reads as a hint, not a hard shape.
+class _HeadingConePainter extends CustomPainter {
+  const _HeadingConePainter();
+
+  static const _halfSpread = 35 * math.pi / 180; // 70° total fan
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final center = Offset(size.width / 2, size.height / 2);
+    final radius = size.width / 2;
+    // Canvas angles are clockwise from the +x axis; straight up is -pi/2.
+    const start = -math.pi / 2 - _halfSpread;
+    const sweep = 2 * _halfSpread;
+    final path = ui.Path()
+      ..moveTo(center.dx, center.dy)
+      ..arcTo(Rect.fromCircle(center: center, radius: radius), start, sweep, false)
+      ..close();
+    final paint = Paint()
+      ..style = PaintingStyle.fill
+      ..shader = RadialGradient(
+        colors: [
+          Brand.slate.withValues(alpha: 0.45),
+          Brand.slate.withValues(alpha: 0.0),
+        ],
+      ).createShader(Rect.fromCircle(center: center, radius: radius));
+    canvas.drawPath(path, paint);
+  }
+
+  @override
+  bool shouldRepaint(_HeadingConePainter oldDelegate) => false;
 }
