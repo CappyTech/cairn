@@ -10,6 +10,7 @@ import '../services/location_sharing_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../services/prefs.dart';
+import '../services/presence.dart';
 import '../services/shared_places_service.dart';
 import '../services/stale_alert_store.dart';
 import '../theme/brand.dart';
@@ -163,16 +164,16 @@ class _MapScreenState extends State<MapScreen> {
     super.dispose();
   }
 
-  // Presence: colour + label from how long ago a contact last shared.
-  static (Color, String) _presence(DateTime updated) {
-    final age = DateTime.now().difference(updated);
-    if (age.inMinutes < 2) return (Colors.green, 'live');
-    if (age.inMinutes < 15) return (Colors.amber, '${age.inMinutes}m ago');
-    if (age.inHours < 24) {
-      return (Colors.orange, '${age.inHours}h ago');
-    }
-    return (Colors.grey, '${age.inDays}d ago');
-  }
+  // Marker colour for a contact's freshness. The bands + label live in the
+  // shared Presence.describe (used by the contacts list too); this only maps
+  // its level to a pin colour, so the map and the list can't drift apart.
+  static Color _presenceColor(PresenceLevel level) => switch (level) {
+        PresenceLevel.live => Colors.green,
+        PresenceLevel.recent => Colors.amber,
+        PresenceLevel.stale => Colors.orange,
+        PresenceLevel.old => Colors.grey,
+        PresenceLevel.never => Colors.grey,
+      };
 
   /// My places drawn as soft lichen circles at their true radius.
   List<CircleMarker> _placeCircles() => [
@@ -269,7 +270,9 @@ class _MapScreenState extends State<MapScreen> {
   List<Marker> _markers() {
     final markers = <Marker>[];
     for (final c in _contacts.values) {
-      final (color, presenceLabel) = _presence(c.updated);
+      final pres = Presence.describe(updated: c.updated, now: DateTime.now());
+      final color = _presenceColor(pres.level);
+      final presenceLabel = pres.label;
       // Where they are: a status THEY broadcast ("Hotel") wins; otherwise, if
       // they're inside one of MY places, note that ("at Home").
       final at = PlacesService.placeContaining(_places, c.lat, c.lng);
