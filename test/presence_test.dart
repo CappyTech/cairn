@@ -105,4 +105,44 @@ void main() {
         updatedById: {'a': agoMin(20)}, alreadyNotified: notified, now: now);
     expect(newly, {'a'});
   });
+
+  group('Presence.describe', () {
+    ({PresenceLevel level, String label}) at(Duration ago) =>
+        Presence.describe(updated: now.subtract(ago), now: now);
+
+    test('never shared → "No location yet"', () {
+      final r = Presence.describe(updated: null, now: now);
+      expect(r.level, PresenceLevel.never);
+      expect(r.label, 'No location yet');
+    });
+
+    test('under 2 minutes → Live', () {
+      expect(at(const Duration(seconds: 30)).level, PresenceLevel.live);
+      expect(at(const Duration(seconds: 30)).label, 'Live');
+    });
+
+    test('minutes ago → recent', () {
+      final r = at(const Duration(minutes: 5));
+      expect(r.level, PresenceLevel.recent);
+      expect(r.label, '5m ago');
+    });
+
+    test('hours ago → stale', () {
+      final r = at(const Duration(hours: 3));
+      expect(r.level, PresenceLevel.stale);
+      expect(r.label, '3h ago');
+    });
+
+    test('days ago → old', () {
+      final r = at(const Duration(days: 2, hours: 1));
+      expect(r.level, PresenceLevel.old);
+      expect(r.label, '2d ago');
+    });
+
+    test('boundaries: 2 min recent, 15 min stale, 24 h old', () {
+      expect(at(const Duration(minutes: 2)).level, PresenceLevel.recent);
+      expect(at(const Duration(minutes: 15)).level, PresenceLevel.stale);
+      expect(at(const Duration(hours: 24)).level, PresenceLevel.old);
+    });
+  });
 }

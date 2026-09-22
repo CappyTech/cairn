@@ -200,8 +200,11 @@ capability-token core as the mailbox model. So the safe first step was timing.
   done* — on-device toggles (`services/contact_prefs_service.dart`, default on)
   to stop recording a contact's **history** or firing **place alerts** for
   them, from the contact row's menu; the geofence monitor honours both each
-  tick, and they're dropped on unpair. *Still want:* clearer last-seen/stale
-  state and a friendlier pairing flow.
+  tick, and they're dropped on unpair. ✅ *Last-seen/stale state done* — each
+  contact row shows a freshness chip (Live / Xm / Xh / Xd ago / No location
+  yet) from their most recent share, via the shared pure `Presence.describe`
+  (`services/presence.dart`); it ticks up on a timer. *Still want:* a friendlier
+  pairing flow.
 - **Map & sharing UX.** Presence/staleness affordances, precision indicators on
   the map, and clearer per-contact controls.
 

@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
@@ -11,6 +12,8 @@ import '../services/nickname_service.dart';
 import '../services/contact_prefs_service.dart';
 import '../services/geofence_monitor.dart';
 import '../services/history_policy.dart';
+import '../services/location_sharing_service.dart';
+import '../services/presence.dart';
 import '../services/prefs.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
@@ -35,6 +38,8 @@ class _HomeScreenState extends State<HomeScreen> {
   List<RecordModel> _contacts = [];
   final Map<String, String> _names = {}; // contact id -> decrypted peer name
   Map<String, ContactControls> _controls = {}; // peer id -> local toggles
+  Map<String, DateTime> _lastSeen = {}; // peer id -> when they last shared to me
+  Timer? _presenceTimer; // re-render time-based freshness labels
   String _myName = 'New device';
   bool _loading = true;
   Future<void> Function()? _unsub;
@@ -63,6 +68,11 @@ class _HomeScreenState extends State<HomeScreen> {
     // the map). Safe to call repeatedly — it starts a single subscription.
     GeofenceMonitor.instance.start();
     _checkHistoryPolicy();
+    // Freshness labels are time-based; re-render them periodically so "5m ago"
+    // keeps counting up without needing new data.
+    _presenceTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      if (mounted) setState(() {});
+    });
     await _refresh();
     // Live: reciprocate the instant someone scans my code, and let the user
     // know a new contact connected (a local, content-free notification).
@@ -127,6 +137,11 @@ class _HomeScreenState extends State<HomeScreen> {
       // A local nickname (if set) wins over the contact's own decrypted name.
       final nicks = await NicknameService.all();
       _controls = await ContactPrefsService.all();
+      // Each contact's last-share time (freshness), from their shares to me.
+      try {
+        final locs = await LocationSharingService.fetchOnce();
+        _lastSeen = {for (final e in locs.entries) e.key: e.value.updated};
+      } catch (_) {/* offline — keep prior freshness */}
       _names.clear();
       for (final c in contacts) {
         final peerName =
@@ -143,6 +158,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void dispose() {
     _unsub?.call();
+    _presenceTimer?.cancel();
     super.dispose();
   }
 
@@ -201,17 +217,30 @@ class _HomeScreenState extends State<HomeScreen> {
     if (changed && mounted) await RestartWidget.restart(context);
   }
 
+  static Color _presenceColor(PresenceLevel l) => switch (l) {
+        PresenceLevel.live => Colors.green,
+        PresenceLevel.recent => Colors.amber,
+        PresenceLevel.stale => Colors.orange,
+        PresenceLevel.old => Colors.grey,
+        PresenceLevel.never => Brand.stone,
+      };
+
   Widget _contactTile(RecordModel c) {
     final name = _names[c.id] ?? 'Unnamed device';
     final peerId = c.getStringValue('peer');
     final ctl = ContactPrefsService.resolve(_controls, peerId);
+    final keyChanged = c.getStringValue('status') == 'key_changed';
+    final pres = Presence.describe(updated: _lastSeen[peerId], now: DateTime.now());
     return ContactTile(
       name: name,
       precision: c.getStringValue('precision'),
       approxOnly: _approxOnly,
-      keyChanged: c.getStringValue('status') == 'key_changed',
+      keyChanged: keyChanged,
       historyOn: ctl.history,
       alertsOn: ctl.alerts,
+      // Hide the freshness chip on the key-changed warning card (its own UI).
+      presenceLabel: keyChanged ? null : pres.label,
+      presenceColor: keyChanged ? null : _presenceColor(pres.level),
       onSetPrecision: (p) => _setPrecision(c, p),
       onRemove: () => _removeContact(peerId, name),
       onRescan: _openScan,

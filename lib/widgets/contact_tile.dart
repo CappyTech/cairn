@@ -26,6 +26,11 @@ class ContactTile extends StatelessWidget {
   final bool historyOn;
   final bool alertsOn;
 
+  /// Freshness chip: how recently they shared (e.g. "Live", "5m ago", "No
+  /// location yet") and the dot colour for it. Null hides the chip.
+  final String? presenceLabel;
+  final Color? presenceColor;
+
   final void Function(String precision) onSetPrecision;
   final VoidCallback onRemove;
   final VoidCallback onRescan;
@@ -45,6 +50,8 @@ class ContactTile extends StatelessWidget {
     required this.onRename,
     this.historyOn = true,
     this.alertsOn = true,
+    this.presenceLabel,
+    this.presenceColor,
     this.onToggleHistory,
     this.onToggleAlerts,
   });
@@ -80,7 +87,11 @@ class ContactTile extends StatelessWidget {
               color:
                   paused ? Theme.of(context).colorScheme.error : Brand.stone),
         ),
-        trailing: PopupMenuButton<String>(
+        trailing: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            if (presenceLabel != null) _presenceChip(),
+            PopupMenuButton<String>(
           onSelected: (v) => switch (v) {
             'rename' => onRename(),
             'remove' => onRemove(),
@@ -109,10 +120,31 @@ class ContactTile extends StatelessWidget {
                 child: ListTile(
                     leading: Icon(Icons.person_remove), title: Text('Remove'))),
           ],
+            ),
+          ],
         ),
       ),
     );
   }
+
+  /// Small freshness pill: a coloured dot + label (e.g. "Live", "5m ago").
+  Widget _presenceChip() => Padding(
+        padding: const EdgeInsets.only(right: 4),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Container(
+              width: 7,
+              height: 7,
+              decoration: BoxDecoration(
+                  color: presenceColor ?? Brand.stone, shape: BoxShape.circle),
+            ),
+            const SizedBox(width: 4),
+            Text(presenceLabel!,
+                style: const TextStyle(fontSize: 11, color: Brand.stone)),
+          ],
+        ),
+      );
 
   PopupMenuItem<String> _toggleItem(
       String value, String label, IconData icon, bool on) {
