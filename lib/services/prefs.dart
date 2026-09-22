@@ -27,6 +27,18 @@ class Prefs {
   static Future<void> setApproxOnly(bool v) async =>
       _s.write(key: 'approx_only', value: v ? '1' : '0');
 
+  /// Whether to raise the content-free activity notifications — a new contact
+  /// pairing, and a contact going quiet. Default ON. Gates both the foreground
+  /// and the background-isolate alerts, so turning it off silences them
+  /// everywhere. (Stored, not derived, so the background isolate reads the same
+  /// answer.) A missing value reads as ON so an existing install isn't silently
+  /// opted out.
+  static Future<bool> activityAlerts() async =>
+      (await _s.read(key: 'activity_alerts')) != '0';
+
+  static Future<void> setActivityAlerts(bool v) async =>
+      _s.write(key: 'activity_alerts', value: v ? '1' : '0');
+
   /// This device's own display name, kept on-device (the server only ever holds
   /// an encrypted-to-self copy, so it can't read your name).
   static Future<String?> name() async => _s.read(key: 'display_name');
