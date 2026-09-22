@@ -396,3 +396,183 @@ class HistoryService {
     return trips;
   }
 }
+
+/// One entry in a day's timeline: either a [Stay] (lingered in one spot) or a
+/// [Move] (travelled between stays). Derived from the breadcrumb trail.
+sealed class TimelineEntry {
+  final DateTime start;
+  final DateTime end;
+  const TimelineEntry(this.start, this.end);
+  Duration get duration => end.difference(start);
+}
+
+/// Time spent in one spot: inside a saved [place], or (place == null) an
+/// unnamed spot where the trail stayed within a small radius for a while.
+class Stay extends TimelineEntry {
+  final Place? place;
+  final double lat; // the place's centre, or the centroid of the stay's points
+  final double lng;
+  const Stay({
+    required this.place,
+    required this.lat,
+    required this.lng,
+    required DateTime start,
+    required DateTime end,
+  }) : super(start, end);
+}
+
+/// Travel between two stays (or from the start / to the end of the trail).
+/// [from]/[to] are the saved places at either end, when there are any.
+class Move extends TimelineEntry {
+  final Place? from;
+  final Place? to;
+  final double distanceMeters;
+  final List<HistoryPoint> path; // endpoints included
+  const Move({
+    required this.from,
+    required this.to,
+    required this.distanceMeters,
+    required this.path,
+    required DateTime start,
+    required DateTime end,
+  }) : super(start, end);
+}
+
+/// Stay/move segmentation of a day's trail — pure, so it's unit-tested.
+abstract final class HistoryTimeline {
+  /// Points within this distance of a stay's centre belong to the same stay.
+  static const stayRadiusMeters = 100.0;
+
+  /// Minimum time lingering in an unnamed spot for it to count as a stay.
+  static const minStay = Duration(minutes: 5);
+
+  /// Total length of a trail in metres (points assumed time-sorted).
+  static double pathLength(List<HistoryPoint> pts) {
+    var d = 0.0;
+    for (var i = 0; i + 1 < pts.length; i++) {
+      d += PlacesService.distanceMeters(
+          pts[i].lat, pts[i].lng, pts[i + 1].lat, pts[i + 1].lng);
+    }
+    return d;
+  }
+
+  /// Split a day's [pts] into alternating stays and moves. Consecutive points
+  /// in the same saved place, or within [stayRadiusMeters] of each other
+  /// outside any place, form a cluster; a cluster is a stay when it lasts at
+  /// least [minStay], or is in a saved place at the start/end of the day, or is
+  /// the only cluster. Everything between stays is a move.
+  static List<TimelineEntry> build(List<HistoryPoint> pts, List<Place> places) {
+    if (pts.isEmpty) return [];
+    final s = [...pts]..sort((a, b) => a.t.compareTo(b.t));
+    final placeOf = [
+      for (final p in s) PlacesService.placeContaining(places, p.lat, p.lng)
+    ];
+
+    // 1. Cluster consecutive points.
+    final clusters = <_Cluster>[];
+    var i = 0;
+    while (i < s.length) {
+      final place = placeOf[i];
+      final c = _Cluster(i, place, s[i].lat, s[i].lng);
+      var j = i + 1;
+      while (j < s.length) {
+        final pj = placeOf[j];
+        final same = place != null
+            ? pj?.id == place.id
+            : pj == null &&
+                PlacesService.distanceMeters(c.lat, c.lng, s[j].lat, s[j].lng) <=
+                    stayRadiusMeters;
+        if (!same) break;
+        c.add(j, s[j]);
+        j++;
+      }
+      clusters.add(c);
+      i = j;
+    }
+
+    // 2. Pick out the stays, merging unnamed ones that drifted apart.
+    final stays = <_Cluster>[];
+    for (var k = 0; k < clusters.length; k++) {
+      final c = clusters[k];
+      final edge = k == 0 || k == clusters.length - 1;
+      final isStay = clusters.length == 1 ||
+          s[c.end].t.difference(s[c.start].t) >= minStay ||
+          (c.place != null && edge);
+      if (!isStay) continue;
+      final prev = stays.isEmpty ? null : stays.last;
+      if (prev != null &&
+          prev.place == null &&
+          c.place == null &&
+          prev.end + 1 == c.start &&
+          PlacesService.distanceMeters(prev.lat, prev.lng, c.lat, c.lng) <=
+              stayRadiusMeters) {
+        prev.absorb(c);
+      } else {
+        stays.add(c);
+      }
+    }
+
+    // 3. Interleave moves between the stays.
+    Move move(int from, int to, Place? fromPlace, Place? toPlace) {
+      final path = s.sublist(from, to + 1);
+      return Move(
+        from: fromPlace,
+        to: toPlace,
+        distanceMeters: pathLength(path),
+        path: path,
+        start: s[from].t,
+        end: s[to].t,
+      );
+    }
+
+    if (stays.isEmpty) return [move(0, s.length - 1, null, null)];
+    final out = <TimelineEntry>[];
+    if (stays.first.start > 0) {
+      out.add(move(0, stays.first.start, null, stays.first.place));
+    }
+    for (var k = 0; k < stays.length; k++) {
+      final c = stays[k];
+      if (k > 0) {
+        final prev = stays[k - 1];
+        out.add(move(prev.end, c.start, prev.place, c.place));
+      }
+      out.add(Stay(
+        place: c.place,
+        lat: c.place?.lat ?? c.lat,
+        lng: c.place?.lng ?? c.lng,
+        start: s[c.start].t,
+        end: s[c.end].t,
+      ));
+    }
+    if (stays.last.end < s.length - 1) {
+      out.add(move(stays.last.end, s.length - 1, stays.last.place, null));
+    }
+    return out;
+  }
+}
+
+/// A run of consecutive points in one spot (working state for [HistoryTimeline]).
+class _Cluster {
+  final int start;
+  int end;
+  final Place? place;
+  double lat;
+  double lng;
+  int _n = 1;
+  _Cluster(this.start, this.place, this.lat, this.lng) : end = start;
+
+  void add(int index, HistoryPoint p) {
+    lat = (lat * _n + p.lat) / (_n + 1);
+    lng = (lng * _n + p.lng) / (_n + 1);
+    _n++;
+    end = index;
+  }
+
+  void absorb(_Cluster other) {
+    final n = _n + other._n;
+    lat = (lat * _n + other.lat * other._n) / n;
+    lng = (lng * _n + other.lng * other._n) / n;
+    _n = n;
+    end = other.end;
+  }
+}
