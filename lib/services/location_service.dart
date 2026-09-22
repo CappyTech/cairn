@@ -20,6 +20,18 @@ class LocationService {
     }
   }
 
+  /// The last cached fix, if any — returns instantly (no GPS wait) so the map
+  /// can centre itself on the first frame while a fresh, precise fix is still
+  /// being acquired. Best-effort: returns null when there's no cached fix or
+  /// permission hasn't been granted yet, and never throws.
+  static Future<Position?> lastKnown() async {
+    try {
+      return await Geolocator.getLastKnownPosition();
+    } catch (_) {
+      return null;
+    }
+  }
+
   static Future<Position> current() async {
     await ensureReady();
     // Bound the wait: high-accuracy can block indefinitely when there's no
