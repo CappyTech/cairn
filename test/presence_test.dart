@@ -1,108 +1,45 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_app/services/presence.dart';
 
-/// Edge-triggered staleness: alert once when a contact goes quiet, re-arm when
-/// they come back. These pin that logic without a clock or a server.
+/// Pure presence buckets used by the contacts list and map.
 void main() {
-  final now = DateTime(2026, 1, 1, 12, 0, 0);
-  DateTime agoMin(int m) => now.subtract(Duration(minutes: m));
+  final now = DateTime.utc(2026, 9, 22, 12, 0, 0);
+  ({PresenceLevel level, String label}) at(Duration ago) =>
+      Presence.describe(updated: now.subtract(ago), now: now);
 
-  group('Presence.newlyStale', () {
-    test('flags a contact past the threshold', () {
-      final stale = Presence.newlyStale(
-        updatedById: {'a': agoMin(20), 'b': agoMin(2)},
-        alreadyNotified: {},
-        now: now,
-      );
-      expect(stale, {'a'});
-    });
-
-    test('does not re-flag one already notified', () {
-      final stale = Presence.newlyStale(
-        updatedById: {'a': agoMin(20)},
-        alreadyNotified: {'a'},
-        now: now,
-      );
-      expect(stale, isEmpty);
-    });
-
-    test('threshold is inclusive at exactly 15 min', () {
-      expect(
-        Presence.newlyStale(
-            updatedById: {'a': agoMin(15)}, alreadyNotified: {}, now: now),
-        {'a'},
-      );
-      expect(
-        Presence.newlyStale(
-            updatedById: {'a': agoMin(14)}, alreadyNotified: {}, now: now),
-        isEmpty,
-      );
-    });
-
-    test('respects a custom threshold', () {
-      expect(
-        Presence.newlyStale(
-          updatedById: {'a': agoMin(6)},
-          alreadyNotified: {},
-          now: now,
-          threshold: const Duration(minutes: 5),
-        ),
-        {'a'},
-      );
-    });
+  test('never shared → "No location yet"', () {
+    final r = Presence.describe(updated: null, now: now);
+    expect(r.level, PresenceLevel.never);
+    expect(r.label, 'No location yet');
   });
 
-  group('Presence.freshAgain', () {
-    test('clears a contact that came back fresh', () {
-      final cleared = Presence.freshAgain(
-        updatedById: {'a': agoMin(1)},
-        alreadyNotified: {'a'},
-        now: now,
-      );
-      expect(cleared, {'a'});
-    });
-
-    test('keeps a still-stale contact flagged', () {
-      final cleared = Presence.freshAgain(
-        updatedById: {'a': agoMin(30)},
-        alreadyNotified: {'a'},
-        now: now,
-      );
-      expect(cleared, isEmpty);
-    });
-
-    test('drops a contact that disappeared (e.g. removed)', () {
-      final cleared = Presence.freshAgain(
-        updatedById: {},
-        alreadyNotified: {'a'},
-        now: now,
-      );
-      expect(cleared, {'a'});
-    });
+  test('under 2 minutes → Live', () {
+    final r = at(const Duration(seconds: 30));
+    expect(r.level, PresenceLevel.live);
+    expect(r.label, 'Live');
   });
 
-  test('full cycle: stale → notified → fresh → re-armed', () {
-    final notified = <String>{};
+  test('minutes ago → recent', () {
+    final r = at(const Duration(minutes: 5));
+    expect(r.level, PresenceLevel.recent);
+    expect(r.label, '5m ago');
+  });
 
-    // Goes quiet → newly stale.
-    var newly = Presence.newlyStale(
-        updatedById: {'a': agoMin(20)}, alreadyNotified: notified, now: now);
-    expect(newly, {'a'});
-    notified.addAll(newly);
+  test('hours ago → stale', () {
+    final r = at(const Duration(hours: 3));
+    expect(r.level, PresenceLevel.stale);
+    expect(r.label, '3h ago');
+  });
 
-    // Still quiet → not re-flagged.
-    newly = Presence.newlyStale(
-        updatedById: {'a': agoMin(25)}, alreadyNotified: notified, now: now);
-    expect(newly, isEmpty);
+  test('days ago → old', () {
+    final r = at(const Duration(days: 2, hours: 1));
+    expect(r.level, PresenceLevel.old);
+    expect(r.label, '2d ago');
+  });
 
-    // Comes back fresh → cleared from the notified set.
-    notified.removeAll(Presence.freshAgain(
-        updatedById: {'a': agoMin(0)}, alreadyNotified: notified, now: now));
-    expect(notified, isEmpty);
-
-    // Goes quiet again → alerts once more.
-    newly = Presence.newlyStale(
-        updatedById: {'a': agoMin(20)}, alreadyNotified: notified, now: now);
-    expect(newly, {'a'});
+  test('boundaries: 2 min is recent, 15 min is stale, 24 h is old', () {
+    expect(at(const Duration(minutes: 2)).level, PresenceLevel.recent);
+    expect(at(const Duration(minutes: 15)).level, PresenceLevel.stale);
+    expect(at(const Duration(hours: 24)).level, PresenceLevel.old);
   });
 }

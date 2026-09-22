@@ -18,6 +18,8 @@ void main() {
     VoidCallback? onRename,
     bool historyOn = true,
     bool alertsOn = true,
+    String? presenceLabel,
+    Color? presenceColor,
     VoidCallback? onToggleHistory,
     VoidCallback? onToggleAlerts,
   }) =>
@@ -28,6 +30,8 @@ void main() {
         keyChanged: keyChanged,
         historyOn: historyOn,
         alertsOn: alertsOn,
+        presenceLabel: presenceLabel,
+        presenceColor: presenceColor,
         onSetPrecision: onSetPrecision ?? (_) {},
         onRemove: onRemove ?? () {},
         onRescan: onRescan ?? () {},
@@ -125,6 +129,18 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(renamed, isTrue);
+  });
+
+  testWidgets('shows the freshness chip when a presence label is given',
+      (tester) async {
+    await tester.pumpWidget(host(tile(presenceLabel: '5m ago')));
+    expect(find.text('5m ago'), findsOneWidget);
+  });
+
+  testWidgets('no freshness chip when presence label is null', (tester) async {
+    await tester.pumpWidget(host(tile()));
+    expect(find.text('Live'), findsNothing);
+    expect(find.text('No location yet'), findsNothing);
   });
 
   testWidgets('history menu item fires onToggleHistory', (tester) async {
