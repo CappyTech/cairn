@@ -1,14 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:pocketbase/pocketbase.dart';
 import '../services/geofence_monitor.dart';
 import '../services/location_service.dart';
-import '../services/nickname_service.dart';
 import '../services/notification_service.dart';
-import '../services/pairing_service.dart';
 import '../services/places_service.dart';
 import '../services/shared_places_service.dart';
+import '../widgets/contact_picker.dart';
 import '../theme/brand.dart';
 import 'shared_pins_screen.dart';
 
@@ -52,74 +50,9 @@ class _PlacesScreenState extends State<PlacesScreen> {
 
   /// Share a place as a pin to selected contacts (encrypted per recipient).
   Future<void> _sharePlace(Place p) async {
-    final List<RecordModel> contacts;
-    try {
-      contacts = await PairingService.myContacts();
-    } catch (_) {
-      return;
-    }
-    if (!mounted) return;
-    if (contacts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No contacts to share with yet.')));
-      return;
-    }
-    final nicks = await NicknameService.all();
-    // Build (peerId, pubKey, name), skipping any without a key.
-    final options = <({String id, String pubKey, String name})>[];
-    for (final c in contacts) {
-      final peerId = c.getStringValue('peer');
-      final pubKey = c.getStringValue('peer_pubkey');
-      if (peerId.isEmpty || pubKey.isEmpty) continue;
-      options.add((
-        id: peerId,
-        pubKey: pubKey,
-        name: NicknameService.resolveName(
-            alias: nicks[peerId],
-            peerName:
-                await PairingService.decryptName(c.getStringValue('peer_name'))),
-      ));
-    }
-    if (!mounted) return;
-    final selected = <String>{};
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: Text('Share "${p.name}" with…'),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final o in options)
-                  CheckboxListTile(
-                    value: selected.contains(o.id),
-                    title: Text(o.name),
-                    onChanged: (v) => setLocal(() =>
-                        v == true ? selected.add(o.id) : selected.remove(o.id)),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed: selected.isEmpty
-                    ? null
-                    : () => Navigator.pop(context, true),
-                child: const Text('Share')),
-          ],
-        ),
-      ),
-    );
-    if (ok != true || selected.isEmpty) return;
-    final recipients = [
-      for (final o in options)
-        if (selected.contains(o.id)) (id: o.id, pubKey: o.pubKey)
-    ];
+    final recipients =
+        await pickShareRecipients(context, title: 'Share "${p.name}" with…');
+    if (recipients == null || recipients.isEmpty || !mounted) return;
     try {
       await SharedPlacesService.share(
           name: p.name, lat: p.lat, lng: p.lng, recipients: recipients);

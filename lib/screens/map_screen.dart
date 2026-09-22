@@ -22,6 +22,7 @@ import '../services/presence.dart';
 import '../services/shared_places_service.dart';
 import '../services/stale_alert_store.dart';
 import '../widgets/background_share_ux.dart';
+import '../widgets/contact_picker.dart';
 import '../theme/brand.dart';
 import 'history_screen.dart';
 import 'places_screen.dart';
@@ -609,7 +610,9 @@ class _MapScreenState extends State<MapScreen> {
     );
     if (name == null || name.isEmpty || !mounted) return;
 
-    final recipients = await _pickContacts('Share "$name" with…');
+    if (!mounted) return;
+    final recipients =
+        await pickShareRecipients(context, title: 'Share "$name" with…');
     if (recipients == null || recipients.isEmpty || !mounted) return;
     try {
       await SharedPlacesService.share(
@@ -630,78 +633,6 @@ class _MapScreenState extends State<MapScreen> {
             .showSnackBar(SnackBar(content: Text("Couldn't share: $e")));
       }
     }
-  }
-
-  /// A multi-select contact picker; returns the chosen `(id, pubKey)` list, or
-  /// null if cancelled. Shared by the pin-sharing flow.
-  Future<List<({String id, String pubKey})>?> _pickContacts(
-      String title) async {
-    final List<RecordModel> contacts;
-    try {
-      contacts = await PairingService.myContacts();
-    } catch (_) {
-      return null;
-    }
-    if (!mounted) return null;
-    if (contacts.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('No contacts to share with yet.')));
-      return null;
-    }
-    final nicks = await NicknameService.all();
-    final options = <({String id, String pubKey, String name})>[];
-    for (final c in contacts) {
-      final peerId = c.getStringValue('peer');
-      final pubKey = c.getStringValue('peer_pubkey');
-      if (peerId.isEmpty || pubKey.isEmpty) continue;
-      options.add((
-        id: peerId,
-        pubKey: pubKey,
-        name: NicknameService.resolveName(
-            alias: nicks[peerId],
-            peerName:
-                await PairingService.decryptName(c.getStringValue('peer_name'))),
-      ));
-    }
-    if (!mounted) return null;
-    final selected = <String>{};
-    final ok = await showDialog<bool>(
-      context: context,
-      builder: (context) => StatefulBuilder(
-        builder: (context, setLocal) => AlertDialog(
-          title: Text(title),
-          content: SizedBox(
-            width: double.maxFinite,
-            child: ListView(
-              shrinkWrap: true,
-              children: [
-                for (final o in options)
-                  CheckboxListTile(
-                    value: selected.contains(o.id),
-                    title: Text(o.name),
-                    onChanged: (v) => setLocal(() =>
-                        v == true ? selected.add(o.id) : selected.remove(o.id)),
-                  ),
-              ],
-            ),
-          ),
-          actions: [
-            TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel')),
-            FilledButton(
-                onPressed:
-                    selected.isEmpty ? null : () => Navigator.pop(context, true),
-                child: const Text('Share')),
-          ],
-        ),
-      ),
-    );
-    if (ok != true) return null;
-    return [
-      for (final o in options)
-        if (selected.contains(o.id)) (id: o.id, pubKey: o.pubKey)
-    ];
   }
 
   /// Tap a contact pin → a sheet with their freshness, where they are, distance,
@@ -832,7 +763,8 @@ class _MapScreenState extends State<MapScreen> {
                             Navigator.push(
                                 context,
                                 MaterialPageRoute(
-                                    builder: (_) => const HistoryScreen()));
+                                    builder: (_) => HistoryScreen(
+                                        initialSubjectId: c.senderId)));
                           },
                           icon: const Icon(Icons.timeline),
                           label: const Text('History'),
