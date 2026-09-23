@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, setEquals;
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
 import '../services/pb_client.dart';
 import '../services/auth_service.dart';
@@ -20,14 +19,9 @@ import '../services/foreground_share.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
-import 'places_screen.dart';
-import 'history_screen.dart';
-import 'admin_screen.dart';
-import 'backup_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/background_share_ux.dart';
-import '../widgets/restart_widget.dart';
 import '../widgets/contact_tile.dart';
-import '../widgets/server_settings_dialog.dart';
 import '../theme/brand.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -266,58 +260,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _editName() async {
-    final controller = TextEditingController(text: _myName);
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Your display name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-              hintText: 'What should contacts see?',
-              border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-    if (newName != null && newName.isNotEmpty) {
-      await AuthService.setDisplayName(newName);
-      _myName = newName;
-      if (mounted) setState(() {});
-    }
-  }
-
-  Future<void> _about() async {
-    // Read the real version at runtime so it always matches the build (CI sets
-    // it from the git tag / run number) instead of a hardcoded literal.
-    final info = await PackageInfo.fromPlatform();
-    if (!mounted) return;
-    showAboutDialog(
-      context: context,
-      applicationName: 'cairn',
-      applicationVersion: 'Version ${info.version} (${info.buildNumber})',
-      applicationIcon: const CairnMark(size: 40),
-      applicationLegalese: 'Your location, for the few you trust.\n© CappyLabs',
-      children: const [
-        SizedBox(height: 12),
-        Text('Private, self-hosted location sharing. Your location is '
-            'end-to-end encrypted and shared only with the people you pair '
-            'with by QR code.'),
-      ],
-    );
-  }
-
-  Future<void> _serverSettings() async {
-    final changed = await showServerSettingsDialog(context);
-    if (changed && mounted) await RestartWidget.restart(context);
+    final n = await showEditNameDialog(context, _myName);
+    if (n != null && mounted) setState(() => _myName = n);
   }
 
   static Color _presenceColor(PresenceLevel l) => switch (l) {
@@ -535,56 +479,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- Home layout ----------------------------------------------------------
-
-  static const _layoutInfo = {
-    HomeLayout.refined: (
-      Icons.view_agenda_outlined,
-      'Classic',
-      'Greeting, sharing settings, then your people.'
-    ),
-    HomeLayout.people: (
-      Icons.people_outline,
-      'People first',
-      'Your people fill the screen; sharing settings sit behind one pill.'
-    ),
-    HomeLayout.map: (
-      Icons.map_outlined,
-      'Map first',
-      'The live map is home, with a pull-up panel of people and settings.'
-    ),
-  };
-
-  Future<void> _chooseLayout() async {
-    final picked = await showDialog<HomeLayout>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Home layout'),
-        children: [
-          RadioGroup<HomeLayout>(
-            groupValue: _layout,
-            onChanged: (v) => Navigator.pop(context, v),
-            child: Column(
-              children: [
-                for (final e in _layoutInfo.entries)
-                  RadioListTile<HomeLayout>(
-                    value: e.key,
-                    secondary: Icon(e.value.$1),
-                    title: Text(e.value.$2),
-                    subtitle: Text(e.value.$3,
-                        style: const TextStyle(fontSize: 12)),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked == null || picked == _layout) return;
-    await Prefs.setHomeLayout(picked);
-    if (mounted) setState(() => _layout = picked);
-  }
-
   // --- Shared pieces ----------------------------------------------------------
 
   bool get _hasDefaultName => _myName == 'New device';
@@ -600,70 +494,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       );
 
-  Widget _menu() => PopupMenuButton<String>(
-        onSelected: (v) {
-          switch (v) {
-            case 'name':
-              _editName();
-            case 'layout':
-              _chooseLayout();
-            case 'places':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const PlacesScreen()));
-            case 'history':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const HistoryScreen()));
-            case 'backup':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const BackupScreen()));
-            case 'server':
-              _serverSettings();
-            case 'about':
-              _about();
-            case 'admin':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const AdminScreen()));
+  /// The gear: everything that isn't about sharing right now lives in Settings.
+  /// Name and layout may change there, so reload them on return.
+  Widget _menu() => IconButton(
+        tooltip: 'Settings',
+        icon: const Icon(Icons.settings_outlined),
+        onPressed: () async {
+          await Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()));
+          final name = await AuthService.displayName();
+          final layout = await Prefs.homeLayout();
+          if (mounted) {
+            setState(() {
+              _myName = name;
+              _layout = layout;
+            });
           }
         },
-        itemBuilder: (context) => [
-          const PopupMenuItem(
-              value: 'name',
-              child: ListTile(
-                  leading: Icon(Icons.edit), title: Text('Edit name'))),
-          const PopupMenuItem(
-              value: 'layout',
-              child: ListTile(
-                  leading: Icon(Icons.dashboard_customize_outlined),
-                  title: Text('Home layout'))),
-          const PopupMenuItem(
-              value: 'places',
-              child: ListTile(
-                  leading: Icon(Icons.place_outlined), title: Text('Places'))),
-          const PopupMenuItem(
-              value: 'history',
-              child: ListTile(
-                  leading: Icon(Icons.history),
-                  title: Text('History & trips'))),
-          const PopupMenuItem(
-              value: 'backup',
-              child: ListTile(
-                  leading: Icon(Icons.vpn_key),
-                  title: Text('Backup & restore'))),
-          const PopupMenuItem(
-              value: 'server',
-              child: ListTile(
-                  leading: Icon(Icons.dns), title: Text('Server settings'))),
-          const PopupMenuItem(
-              value: 'about',
-              child: ListTile(
-                  leading: Icon(Icons.info_outline), title: Text('About'))),
-          if (isAdminView)
-            const PopupMenuItem(
-                value: 'admin',
-                child: ListTile(
-                    leading: Icon(Icons.admin_panel_settings),
-                    title: Text('Admin dashboard'))),
-        ],
       );
 
   void _openQr() => Navigator.push(
@@ -1158,16 +1005,18 @@ class _HomeScreenState extends State<HomeScreen> {
                             selected: _activityAlerts,
                             onSelected: _setActivityAlerts,
                           ),
-                          ActionChip(
-                            avatar: Icon(
-                                _status.isEmpty
-                                    ? Icons.add
-                                    : Icons.label_outline,
-                                size: 18),
-                            label: Text(_status.isEmpty ? 'Status' : _status),
-                            onPressed: _editStatus,
-                          ),
                         ],
+                      ),
+                      const SizedBox(height: 8),
+                      Card(
+                        margin: EdgeInsets.zero,
+                        elevation: 0,
+                        color: context.cairn.card,
+                        clipBehavior: Clip.antiAlias,
+                        shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            side: BorderSide(color: context.cairn.outline)),
+                        child: _sharingRows().last, // the Status row
                       ),
                       const SizedBox(height: 12),
                       Row(
