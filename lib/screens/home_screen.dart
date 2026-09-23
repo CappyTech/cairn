@@ -983,11 +983,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 minChildSize: 0.14,
                 maxChildSize: 0.9,
                 snap: true,
-                builder: (context, scroll) => Material(
+                // Floats like the top bar: inset from the edges, fully rounded.
+                builder: (context, scroll) => SafeArea(
+                  top: false,
+                  child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Material(
                   color: context.cairn.sheet,
                   elevation: 8,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: BorderRadius.circular(24),
                   clipBehavior: Clip.antiAlias,
                   child: ListView(
                     controller: scroll,
@@ -1058,7 +1062,7 @@ class _HomeScreenState extends State<HomeScreen> {
                       ..._people(),
                     ],
                   ),
-                ),
+                ))),
               ),
             ],
           );
