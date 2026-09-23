@@ -153,9 +153,13 @@ class _BackupScreenState extends State<BackupScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Brand.mist,
+                        color: Theme.of(context)
+                            .colorScheme
+                            .surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Brand.pebble),
+                        border: Border.all(
+                            color:
+                                Theme.of(context).colorScheme.outlineVariant),
                       ),
                       child: Wrap(
                         spacing: 8,

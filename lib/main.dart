@@ -8,10 +8,12 @@ import 'screens/home_screen.dart';
 import 'widgets/restart_widget.dart';
 import 'widgets/server_settings_dialog.dart';
 import 'theme/brand.dart';
+import 'theme/theme_controller.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initPocketBase();
+  await ThemeController.load();
   // Background sharing is mobile-only; ignore where unsupported (web/desktop).
   if (!kIsWeb) {
     try {
@@ -26,11 +28,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Cairn',
-      debugShowCheckedModeBanner: false,
-      theme: Brand.theme(),
-      home: const AuthGate(),
+    return ValueListenableBuilder<ThemeMode>(
+      valueListenable: ThemeController.mode,
+      builder: (context, mode, _) => MaterialApp(
+        title: 'Cairn',
+        debugShowCheckedModeBanner: false,
+        theme: Brand.theme(),
+        darkTheme: Brand.darkTheme(),
+        themeMode: mode,
+        home: const AuthGate(),
+      ),
     );
   }
 }

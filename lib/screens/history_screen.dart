@@ -338,8 +338,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           ),
           children: [
             TileLayer(
-              urlTemplate:
-                  'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+              urlTemplate: Brand.basemapUrl(context),
               userAgentPackageName: 'uk.cappylabs.cairn',
               maxNativeZoom: 16,
             ),
@@ -360,7 +359,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 Polyline(
                   points: [for (final p in _points) LatLng(p.lat, p.lng)],
                   strokeWidth: 4,
-                  color: Brand.slate.withValues(alpha: 0.7),
+                  color: Brand.ink(context).withValues(alpha: 0.7),
                 ),
               ]),
             MarkerLayer(markers: _mapMarkers()),
@@ -406,7 +405,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           alignment: Alignment.center,
           clipBehavior: Clip.none,
           children: [
-            const Icon(Icons.circle, size: 14, color: Brand.slate),
+            Icon(Icons.circle, size: 14, color: Brand.ink(context)),
             Transform.translate(
               offset: const Offset(0, -20),
               child: Container(
@@ -522,8 +521,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
       child: Text(text,
-          style: const TextStyle(
-              color: Brand.slate, fontWeight: FontWeight.w600, fontSize: 13)),
+          style: TextStyle(
+              color: Brand.ink(context),
+              fontWeight: FontWeight.w600,
+              fontSize: 13)),
     );
   }
 
@@ -559,7 +560,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case Move():
         return ListTile(
           dense: true,
-          leading: const Icon(Icons.route, color: Brand.slate),
+          leading: Icon(Icons.route, color: Brand.ink(context)),
           title: Text('Travelled ${_dist(e.distanceMeters)}'),
           subtitle:
               Text('${_span(e.start, e.end)} · ${_dur(e.duration)}'),

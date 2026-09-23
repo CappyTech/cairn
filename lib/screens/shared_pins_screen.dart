@@ -107,9 +107,9 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const CircleAvatar(
-          backgroundColor: Color(0x228FA35D),
-          child: Icon(Icons.push_pin, color: Brand.slate),
+        leading: CircleAvatar(
+          backgroundColor: const Color(0x228FA35D),
+          child: Icon(Icons.push_pin, color: Brand.ink(context)),
         ),
         title: Text(p.name),
         subtitle: Text('Shared with $n contact${n == 1 ? '' : 's'}'),
@@ -124,9 +124,9 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
   Widget _withMeTile(SharedPin p) => Card(
         margin: const EdgeInsets.only(bottom: 8),
         child: ListTile(
-          leading: const CircleAvatar(
-            backgroundColor: Color(0x228FA35D),
-            child: Icon(Icons.push_pin, color: Brand.slate),
+          leading: CircleAvatar(
+            backgroundColor: const Color(0x228FA35D),
+            child: Icon(Icons.push_pin, color: Brand.ink(context)),
           ),
           title: Text(p.name),
           subtitle: Text(

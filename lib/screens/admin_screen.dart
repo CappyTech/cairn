@@ -217,7 +217,8 @@ class _AdminScreenState extends State<AdminScreen> {
         spacing: 10,
         runSpacing: 10,
         children: [
-          _stat('Devices', '${d.users.length}', Icons.smartphone, Brand.slate),
+          _stat('Devices', '${d.users.length}', Icons.smartphone,
+              Brand.ink(context)),
           _stat('Active now', '$activeNow', Icons.bolt, Colors.green),
           _stat('Connections', '${d.contacts.length}', Icons.link, Colors.teal),
           _stat('Shares', '${d.shares.length}', Icons.lock, Colors.deepPurple),

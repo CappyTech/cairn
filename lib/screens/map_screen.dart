@@ -394,9 +394,9 @@ class _MapScreenState extends State<MapScreen> {
             // pointing up (north), so rotating it clockwise by the heading
             // aims it correctly on this north-up map.
             angle: heading * math.pi / 180,
-            child: const CustomPaint(
-              size: Size(56, 56),
-              painter: _HeadingConePainter(),
+            child: CustomPaint(
+              size: const Size(56, 56),
+              painter: _HeadingConePainter(Brand.ink(context)),
             ),
           ),
         _meDot(),
@@ -441,8 +441,7 @@ class _MapScreenState extends State<MapScreen> {
               // its own place labels. Key-less; for a fully self-hosted stack,
               // point this at your own tile server instead.
               TileLayer(
-                urlTemplate:
-                    'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                urlTemplate: Brand.basemapUrl(context),
                 userAgentPackageName: 'uk.cappylabs.cairn',
                 maxNativeZoom: 16,
               ),
@@ -955,10 +954,12 @@ double? coneHeading({
 }
 
 /// A soft wedge fanning "up" (north) from the centre, faded out at its far
-/// edge — rotated by the caller to point along the heading. On-brand slate,
-/// low alpha so it reads as a hint, not a hard shape.
+/// edge — rotated by the caller to point along the heading. In the theme's
+/// ink (Slate, or Mist on the dark map), low alpha so it reads as a hint, not
+/// a hard shape.
 class _HeadingConePainter extends CustomPainter {
-  const _HeadingConePainter();
+  final Color color;
+  const _HeadingConePainter(this.color);
 
   static const _halfSpread = 35 * math.pi / 180; // 70° total fan
 
@@ -977,15 +978,16 @@ class _HeadingConePainter extends CustomPainter {
       ..style = PaintingStyle.fill
       ..shader = RadialGradient(
         colors: [
-          Brand.slate.withValues(alpha: 0.45),
-          Brand.slate.withValues(alpha: 0.0),
+          color.withValues(alpha: 0.45),
+          color.withValues(alpha: 0.0),
         ],
       ).createShader(Rect.fromCircle(center: center, radius: radius));
     canvas.drawPath(path, paint);
   }
 
   @override
-  bool shouldRepaint(_HeadingConePainter oldDelegate) => false;
+  bool shouldRepaint(_HeadingConePainter oldDelegate) =>
+      oldDelegate.color != color;
 }
 
 /// A small, unobtrusive pill shown while we're still acquiring this device's

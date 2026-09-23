@@ -39,6 +39,13 @@ class Prefs {
   static Future<void> setActivityAlerts(bool v) async =>
       _s.write(key: 'activity_alerts', value: v ? '1' : '0');
 
+  /// Appearance: 'system' (default), 'light' or 'dark'.
+  static Future<String> themeMode() async =>
+      (await _s.read(key: 'theme_mode')) ?? 'system';
+
+  static Future<void> setThemeMode(String v) async =>
+      _s.write(key: 'theme_mode', value: v);
+
   /// This device's own display name, kept on-device (the server only ever holds
   /// an encrypted-to-self copy, so it can't read your name).
   static Future<String?> name() async => _s.read(key: 'display_name');

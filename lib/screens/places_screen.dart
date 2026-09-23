@@ -169,7 +169,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
         child: ListTile(
           leading: CircleAvatar(
             backgroundColor: Brand.lichen.withValues(alpha: 0.20),
-            child: const Icon(Icons.place, color: Brand.slate),
+            child: Icon(Icons.place, color: Brand.ink(context)),
           ),
           title: Text(p.name),
           subtitle: Text(
@@ -338,8 +338,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   ),
                   children: [
                     TileLayer(
-                      urlTemplate:
-                          'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                      urlTemplate: Brand.basemapUrl(context),
                       userAgentPackageName: 'uk.cappylabs.cairn',
                       maxNativeZoom: 16,
                     ),
@@ -356,13 +355,13 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   ],
                 ),
                 // Fixed centre pin (sits above the map, marks the chosen point).
-                const IgnorePointer(
+                IgnorePointer(
                   child: Padding(
-                    padding: EdgeInsets.only(bottom: 34),
+                    padding: const EdgeInsets.only(bottom: 34),
                     child: Icon(Icons.place,
                         size: 40,
-                        color: Brand.slate,
-                        shadows: [
+                        color: Brand.ink(context),
+                        shadows: const [
                           Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1))
                         ]),
                   ),

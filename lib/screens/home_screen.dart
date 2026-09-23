@@ -27,6 +27,7 @@ import '../widgets/restart_widget.dart';
 import '../widgets/contact_tile.dart';
 import '../widgets/server_settings_dialog.dart';
 import '../theme/brand.dart';
+import '../theme/theme_controller.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -243,6 +244,34 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  /// Light / dark / follow the phone. Applies immediately and is remembered.
+  Future<void> _appearance() async {
+    const options = [
+      (ThemeMode.system, 'Match system', Icons.brightness_auto_outlined),
+      (ThemeMode.light, 'Light', Icons.light_mode_outlined),
+      (ThemeMode.dark, 'Dark', Icons.dark_mode_outlined),
+    ];
+    final current = ThemeController.mode.value;
+    final picked = await showDialog<ThemeMode>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Appearance'),
+        children: [
+          for (final (mode, label, icon) in options)
+            ListTile(
+              leading: Icon(icon),
+              title: Text(label),
+              trailing: mode == current
+                  ? const Icon(Icons.check, color: Brand.lichen)
+                  : null,
+              onTap: () => Navigator.pop(context, mode),
+            ),
+        ],
+      ),
+    );
+    if (picked != null) await ThemeController.set(picked);
+  }
+
   Future<void> _about() async {
     // Read the real version at runtime so it always matches the build (CI sets
     // it from the git tag / run number) instead of a hardcoded literal.
@@ -424,6 +453,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 case 'backup':
                   Navigator.push(context,
                       MaterialPageRoute(builder: (_) => const BackupScreen()));
+                case 'appearance':
+                  _appearance();
                 case 'server':
                   _serverSettings();
                 case 'about':
@@ -453,6 +484,11 @@ class _HomeScreenState extends State<HomeScreen> {
                   child: ListTile(
                       leading: Icon(Icons.vpn_key),
                       title: Text('Backup & restore'))),
+              const PopupMenuItem(
+                  value: 'appearance',
+                  child: ListTile(
+                      leading: Icon(Icons.brightness_6_outlined),
+                      title: Text('Appearance'))),
               const PopupMenuItem(
                   value: 'server',
                   child: ListTile(
