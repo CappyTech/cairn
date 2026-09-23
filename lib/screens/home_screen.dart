@@ -1,5 +1,6 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart' show kIsWeb, defaultTargetPlatform, TargetPlatform;
+import 'package:flutter/foundation.dart'
+    show kIsWeb, defaultTargetPlatform, TargetPlatform, setEquals;
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
@@ -45,6 +46,11 @@ class _HomeScreenState extends State<HomeScreen> {
   String _myName = 'New device';
   bool _loading = true;
   Future<void> Function()? _unsub;
+  // Live feed of contacts' shares to me, so freshness ("Live", "5m ago")
+  // tracks reality instead of the last manual refresh. Re-made when the set of
+  // contacts changes (the feed only follows contacts known when it starts).
+  Future<void> Function()? _unsubShares;
+  Set<String> _sharesFor = {};
   bool _bgEnabled = false;
   bool _approxOnly = false;
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
@@ -62,7 +68,7 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _lifecycle = AppLifecycleListener(onResume: _recheckBg);
+    _lifecycle = AppLifecycleListener(onResume: _onResume);
     _init();
   }
 
@@ -211,14 +217,47 @@ class _HomeScreenState extends State<HomeScreen> {
             alias: nicks[c.getStringValue('peer')], peerName: peerName);
       }
       if (mounted) setState(() { _contacts = contacts; _loading = false; });
+      await _followShares({for (final c in contacts) c.getStringValue('peer')});
     } catch (_) {
       if (mounted) setState(() => _loading = false);
     }
   }
 
+  /// (Re)start the live share feed for [peers], if not already following
+  /// exactly them.
+  Future<void> _followShares(Set<String> peers) async {
+    if (!mounted || setEquals(peers, _sharesFor)) return;
+    _sharesFor = peers; // claim first, so a concurrent refresh doesn't double up
+    await _unsubShares?.call();
+    _unsubShares = null;
+    try {
+      final unsub = await LocationSharingService.subscribe((byId) {
+        if (!mounted) return;
+        setState(() => _lastSeen = {
+              for (final e in byId.entries) e.key: e.value.updated,
+            });
+      });
+      if (mounted && setEquals(peers, _sharesFor)) {
+        _unsubShares = unsub;
+      } else {
+        await unsub(); // screen gone, or superseded while subscribing
+      }
+    } catch (_) {
+      _sharesFor = {}; // offline — let the next refresh retry
+    }
+  }
+
+  /// Back in the foreground: the live feed may have missed updates while the
+  /// app was suspended, so reload once, and re-check background sharing.
+  Future<void> _onResume() async {
+    await _recheckBg();
+    await _refresh();
+  }
+
   @override
   void dispose() {
     _unsub?.call();
+    _unsubShares?.call();
     _presenceTimer?.cancel();
     _lifecycle.dispose();
     ForegroundShare.instance.error.removeListener(_onShareError);

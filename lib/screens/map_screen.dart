@@ -92,9 +92,13 @@ class _MapScreenState extends State<MapScreen> {
     _share.error.addListener(_onShareError);
 
     // Staleness is time-based, so re-evaluate on a timer (not just on
-    // incoming shares) to catch a contact who simply stopped sharing.
-    _staleTimer = Timer.periodic(
-        const Duration(seconds: 30), (_) => unawaited(_checkStale()));
+    // incoming shares) to catch a contact who simply stopped sharing — and
+    // rebuild so pin labels ("live", "5m ago") keep ageing when nothing new
+    // arrives.
+    _staleTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_checkStale());
+      if (mounted) setState(() {});
+    });
 
     // Receive contacts' locations regardless of our own GPS state.
     final unsub = await LocationSharingService.subscribe((map) {
