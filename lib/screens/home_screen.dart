@@ -173,10 +173,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   border: OutlineInputBorder()),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Shown to your contacts next to your location, end-to-end '
               'encrypted. Clear it any time.',
-              style: TextStyle(color: Brand.stone, fontSize: 12),
+              style: TextStyle(color: context.cairn.muted, fontSize: 12),
             ),
           ],
         ),
@@ -373,10 +373,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   hintText: 'e.g. Mum, Work', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'A private label kept only on this device — they won\'t see it. '
               'Clear it to use the name they chose.',
-              style: TextStyle(color: Brand.stone, fontSize: 12),
+              style: TextStyle(color: context.cairn.muted, fontSize: 12),
             ),
           ],
         ),
@@ -491,10 +491,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.white,
+        color: context.cairn.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: Brand.pebble),
+          side: BorderSide(color: context.cairn.outline),
         ),
         child: ListTile(
           leading: const Icon(Icons.notifications_off_outlined),
@@ -817,14 +817,14 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _emptyPeople() => Card(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: Colors.white,
+        color: context.cairn.card,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Brand.pebble)),
+            side: BorderSide(color: context.cairn.outline)),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: _addPerson,
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
             child: Column(
               children: [
@@ -835,7 +835,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 SizedBox(height: 4),
                 Text('Show them your code, or scan theirs.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Brand.stone)),
+                    style: TextStyle(color: context.cairn.muted)),
               ],
             ),
           ),
@@ -890,8 +890,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_hasDefaultName ? 'Hi 👋' : 'Hi, $_myName 👋',
                 style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 2),
-            const Text('Your location, for the few you trust.',
-                style: TextStyle(color: Brand.stone)),
+            Text('Your location, for the few you trust.',
+                style: TextStyle(color: context.cairn.muted)),
             if (_hasDefaultName)
               Align(
                 alignment: Alignment.centerLeft,
@@ -927,11 +927,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Card(
               margin: EdgeInsets.zero,
               elevation: 0,
-              color: Colors.white,
+              color: context.cairn.card,
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Brand.pebble)),
+                  side: BorderSide(color: context.cairn.outline)),
               child: _divided(_sharingRows()),
             ),
             const SizedBox(height: 24),
@@ -988,8 +988,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ..._notices(),
             Material(
-              color: Colors.white,
-              shape: const StadiumBorder(side: BorderSide(color: Brand.pebble)),
+              color: context.cairn.card,
+              shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
               child: InkWell(
                 customBorder: const StadiumBorder(),
                 onTap: _sharingSheet,
@@ -1009,7 +1009,7 @@ class _HomeScreenState extends State<HomeScreen> {
                         child: Text(_sharingSummary(),
                             overflow: TextOverflow.ellipsis),
                       ),
-                      const Icon(Icons.expand_more, color: Brand.stone),
+                      Icon(Icons.expand_more, color: context.cairn.muted),
                     ],
                   ),
                 ),
@@ -1043,7 +1043,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 maxChildSize: 0.9,
                 snap: true,
                 builder: (context, scroll) => Material(
-                  color: Brand.mist,
+                  color: context.cairn.sheet,
                   elevation: 8,
                   borderRadius:
                       const BorderRadius.vertical(top: Radius.circular(20)),
@@ -1058,7 +1058,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                              color: Brand.pebble,
+                              color: context.cairn.outline,
                               borderRadius: BorderRadius.circular(2)),
                         ),
                       ),

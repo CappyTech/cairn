@@ -383,9 +383,15 @@ class _MapScreenState extends State<MapScreen> {
         width: 22,
         height: 22,
         decoration: BoxDecoration(
-          color: Brand.slate,
+          // Ink on its page colour: slate/white in light, mist/night in dark,
+          // so "you" stands out on either basemap.
+          color: context.cairn.ink,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Brand.night
+                  : Colors.white,
+              width: 3),
           boxShadow: const [
             BoxShadow(blurRadius: 4, color: Colors.black38, offset: Offset(0, 1)),
           ],
@@ -434,7 +440,7 @@ class _MapScreenState extends State<MapScreen> {
           // point this at your own tile server instead.
           TileLayer(
             urlTemplate:
-                'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                Brand.basemapUrl(context),
             userAgentPackageName: 'uk.cappylabs.cairn',
             maxNativeZoom: 16,
           ),
@@ -476,11 +482,11 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(height: 8),
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 4),
-                  const Text(
+                  Text(
                     "You can still see contacts below; sharing your own "
                     "location needs permission.",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
@@ -505,8 +511,8 @@ class _MapScreenState extends State<MapScreen> {
             FloatingActionButton.small(
               heroTag: 'follow',
               tooltip: _follow ? 'Stop following' : 'Follow me',
-              backgroundColor: _follow ? Brand.slate : null,
-              foregroundColor: _follow ? Colors.white : null,
+              backgroundColor: _follow ? Theme.of(context).colorScheme.primary : null,
+              foregroundColor: _follow ? Theme.of(context).colorScheme.onPrimary : null,
               onPressed: _toggleFollow,
               child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
             ),
@@ -703,7 +709,7 @@ class _MapScreenState extends State<MapScreen> {
                       if (distance != null) _formatDistance(distance),
                       if (c.approximate) 'approximate',
                     ].join(' · '),
-                    style: const TextStyle(color: Brand.stone, fontSize: 13),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
                   const SizedBox(height: 16),
                   if (keyChanged)
@@ -717,8 +723,8 @@ class _MapScreenState extends State<MapScreen> {
                             fontSize: 12),
                       ),
                     ),
-                  const Text('How precisely I share with them',
-                      style: TextStyle(fontSize: 12, color: Brand.stone)),
+                  Text('How precisely I share with them',
+                      style: TextStyle(fontSize: 12, color: context.cairn.muted)),
                   const SizedBox(height: 6),
                   SegmentedButton<String>(
                     segments: const [

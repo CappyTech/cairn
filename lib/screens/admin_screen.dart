@@ -217,7 +217,7 @@ class _AdminScreenState extends State<AdminScreen> {
         spacing: 10,
         runSpacing: 10,
         children: [
-          _stat('Devices', '${d.users.length}', Icons.smartphone, Brand.slate),
+          _stat('Devices', '${d.users.length}', Icons.smartphone, context.cairn.ink),
           _stat('Active now', '$activeNow', Icons.bolt, Colors.green),
           _stat('Connections', '${d.contacts.length}', Icons.link, Colors.teal),
           _stat('Shares', '${d.shares.length}', Icons.lock, Colors.deepPurple),
@@ -245,7 +245,7 @@ class _AdminScreenState extends State<AdminScreen> {
           Text(value,
               style:
                   const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(label, style: TextStyle(color: context.cairn.muted, fontSize: 12)),
         ],
       ),
     );
@@ -253,7 +253,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // --- tabs -----------------------------------------------------------------
   Widget _empty(String msg) =>
-      Center(child: Text(msg, style: const TextStyle(color: Colors.grey)));
+      Center(child: Text(msg, style: TextStyle(color: context.cairn.muted)));
 
   Widget _devices(AdminSnapshot d) {
     if (d.users.isEmpty) return _empty('No devices yet.');
@@ -329,7 +329,7 @@ class _AdminScreenState extends State<AdminScreen> {
                 subtitle: Text('🔒 encrypted · $bytes bytes',
                     style: const TextStyle(fontSize: 12)),
                 trailing: Text(_ago(s.getStringValue('updated')),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    style: TextStyle(fontSize: 11, color: context.cairn.muted)),
               );
             }).toList(),
           ),

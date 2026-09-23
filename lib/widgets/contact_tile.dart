@@ -85,12 +85,12 @@ class ContactTile extends StatelessWidget {
           style: TextStyle(
               fontSize: 12,
               color:
-                  paused ? Theme.of(context).colorScheme.error : Brand.stone),
+                  paused ? Theme.of(context).colorScheme.error : context.cairn.muted),
         ),
         trailing: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            if (presenceLabel != null) _presenceChip(),
+            if (presenceLabel != null) _presenceChip(context),
             PopupMenuButton<String>(
           onSelected: (v) => switch (v) {
             'rename' => onRename(),
@@ -105,8 +105,8 @@ class ContactTile extends StatelessWidget {
             _precItem('off', 'Pause sharing', Icons.pause_circle_outline),
             const PopupMenuDivider(),
             // Local per-contact toggles. Trailing switch reflects current state.
-            _toggleItem('history', 'Record history', Icons.history, historyOn),
-            _toggleItem(
+            _toggleItem(context, 'history', 'Record history', Icons.history, historyOn),
+            _toggleItem(context,
                 'alerts', 'Place alerts', Icons.notifications_active_outlined,
                 alertsOn),
             const PopupMenuDivider(),
@@ -128,7 +128,7 @@ class ContactTile extends StatelessWidget {
   }
 
   /// Small freshness pill: a coloured dot + label (e.g. "Live", "5m ago").
-  Widget _presenceChip() => Padding(
+  Widget _presenceChip(BuildContext context) => Padding(
         padding: const EdgeInsets.only(right: 4),
         child: Row(
           mainAxisSize: MainAxisSize.min,
@@ -137,16 +137,16 @@ class ContactTile extends StatelessWidget {
               width: 7,
               height: 7,
               decoration: BoxDecoration(
-                  color: presenceColor ?? Brand.stone, shape: BoxShape.circle),
+                  color: presenceColor ?? context.cairn.muted, shape: BoxShape.circle),
             ),
             const SizedBox(width: 4),
             Text(presenceLabel!,
-                style: const TextStyle(fontSize: 11, color: Brand.stone)),
+                style: TextStyle(fontSize: 11, color: context.cairn.muted)),
           ],
         ),
       );
 
-  PopupMenuItem<String> _toggleItem(
+  PopupMenuItem<String> _toggleItem(BuildContext context,
       String value, String label, IconData icon, bool on) {
     return PopupMenuItem(
       value: value,
@@ -155,7 +155,7 @@ class ContactTile extends StatelessWidget {
         title: Text(label),
         trailing: Icon(
           on ? Icons.toggle_on : Icons.toggle_off,
-          color: on ? Brand.lichen : Brand.stone,
+          color: on ? Brand.lichen : context.cairn.muted,
           size: 26,
         ),
       ),

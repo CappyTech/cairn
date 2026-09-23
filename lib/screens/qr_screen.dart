@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/pairing_service.dart';
+import '../theme/brand.dart';
 import '../services/invite_service.dart';
 
 /// Shows this device's pairing QR (for in-person scanning) and, for people who
@@ -83,13 +84,13 @@ class _QrScreenState extends State<QrScreen> {
                 ),
               ),
               const SizedBox(height: 20),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(horizontal: 40),
                 child: Text(
                   'They point their camera here to connect with you. Only people '
                   'you show this to can pair.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey),
+                  style: TextStyle(color: context.cairn.muted),
                 ),
               ),
               const SizedBox(height: 28),
@@ -118,14 +119,14 @@ class _QrScreenState extends State<QrScreen> {
                 ),
               ),
               const SizedBox(height: 12),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.symmetric(horizontal: 40),
                 child: Text(
                   'Sends a single-use invite that expires in 24 hours. Send it '
                   'over a channel you trust — whoever receives it can pair with '
                   'you. They open Scan → "Paste code instead".',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: Colors.grey, fontSize: 12),
+                  style: TextStyle(color: context.cairn.muted, fontSize: 12),
                 ),
               ),
             ],

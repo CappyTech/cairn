@@ -339,7 +339,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           children: [
             TileLayer(
               urlTemplate:
-                  'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                  Brand.basemapUrl(context),
               userAgentPackageName: 'uk.cappylabs.cairn',
               maxNativeZoom: 16,
             ),
@@ -379,7 +379,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                           'background sharing to start building a trail.'
                       : 'No points for this day.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Brand.stone),
+                  style: TextStyle(color: context.cairn.muted),
                 ),
               ),
             ),
@@ -453,7 +453,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       child: Row(
         children: [
           Text(_hm(_points.first.t),
-              style: const TextStyle(fontSize: 11, color: Brand.stone)),
+              style: TextStyle(fontSize: 11, color: context.cairn.muted)),
           Expanded(
             child: Slider(
               value: _scrub.toDouble(),
@@ -469,7 +469,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
             ),
           ),
           Text(_hm(_points.last.t),
-              style: const TextStyle(fontSize: 11, color: Brand.stone)),
+              style: TextStyle(fontSize: 11, color: context.cairn.muted)),
         ],
       ),
     );
@@ -522,8 +522,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
       child: Text(text,
-          style: const TextStyle(
-              color: Brand.slate, fontWeight: FontWeight.w600, fontSize: 13)),
+          style: TextStyle(
+              color: context.cairn.ink, fontWeight: FontWeight.w600, fontSize: 13)),
     );
   }
 
@@ -541,7 +541,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   : pin != null
                       ? Icons.push_pin_outlined
                       : Icons.place_outlined,
-              color: named ? Brand.lichen : Brand.stone),
+              color: named ? Brand.lichen : context.cairn.muted),
           title: Text(e.place?.name ?? pin?.name ?? 'Stopped',
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(e.duration.inMinutes < 1
@@ -559,7 +559,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case Move():
         return ListTile(
           dense: true,
-          leading: const Icon(Icons.route, color: Brand.slate),
+          leading: Icon(Icons.route, color: context.cairn.ink),
           title: Text('Travelled ${_dist(e.distanceMeters)}'),
           subtitle:
               Text('${_span(e.start, e.end)} · ${_dur(e.duration)}'),
@@ -636,7 +636,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   ? 'This server keeps everything. Choose a shorter window to '
                       'auto-delete your older history on this device\'s account.'
                   : 'This server keeps $serverDays days. You can keep less.',
-              style: const TextStyle(color: Brand.stone, fontSize: 13),
+              style: TextStyle(color: context.cairn.muted, fontSize: 13),
             ),
           ),
           for (final o in options)
@@ -645,7 +645,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 o.value == current
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: o.value == current ? Brand.lichen : Brand.stone,
+                color: o.value == current ? Brand.lichen : context.cairn.muted,
               ),
               title: Text(o.label),
               onTap: () => Navigator.pop(context, o),

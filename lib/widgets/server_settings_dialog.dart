@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import '../services/pb_client.dart';
+import '../theme/brand.dart';
 
 /// Shows the "Server address" dialog and returns true if the address was
 /// changed (saved or reset to default) — so the caller can rebuild the app onto
@@ -70,7 +71,7 @@ class _ServerSettingsDialogState extends State<_ServerSettingsDialog> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text('Currently: $serverUrl',
-              style: const TextStyle(color: Colors.grey, fontSize: 12)),
+              style: TextStyle(color: context.cairn.muted, fontSize: 12)),
           const SizedBox(height: 12),
           TextField(
             controller: _controller,
@@ -88,10 +89,10 @@ class _ServerSettingsDialogState extends State<_ServerSettingsDialog> {
             ),
           ),
           const SizedBox(height: 8),
-          const Text(
+          Text(
             "On a real phone, use your PC's network address, not localhost. "
             'Include http:// or https://.',
-            style: TextStyle(color: Colors.grey, fontSize: 12),
+            style: TextStyle(color: context.cairn.muted, fontSize: 12),
           ),
         ],
       ),
