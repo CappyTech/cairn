@@ -48,6 +48,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _approxOnly = false;
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
+  // Background sharing was switched off because its notification was hidden.
+  bool _bgHidden = false;
+  late final AppLifecycleListener _lifecycle;
 
   bool get _bgSupported =>
       !kIsWeb &&
@@ -57,12 +60,13 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
+    _lifecycle = AppLifecycleListener(onResume: _recheckBg);
     _init();
   }
 
   Future<void> _init() async {
     if (_bgSupported) {
-      _bgEnabled = await BackgroundShare.isEnabled();
+      await _loadBgState();
     }
     _approxOnly = await Prefs.approxOnly();
     _activityAlerts = await Prefs.activityAlerts();
@@ -210,6 +214,7 @@ class _HomeScreenState extends State<HomeScreen> {
   void dispose() {
     _unsub?.call();
     _presenceTimer?.cancel();
+    _lifecycle.dispose();
     super.dispose();
   }
 
@@ -381,7 +386,63 @@ class _HomeScreenState extends State<HomeScreen> {
     // The disclosure + permission flow lives in BackgroundShareUx, shared with
     // the map's own-marker sheet so both behave identically.
     final enabled = await BackgroundShareUx.toggle(context, on: on);
-    if (mounted) setState(() => _bgEnabled = enabled);
+    if (mounted) {
+      setState(() {
+        _bgEnabled = enabled;
+        if (enabled) _bgHidden = false;
+      });
+    }
+  }
+
+  /// Background sharing must never run without its notification being
+  /// visible: switch it off if notifications were turned off since, and
+  /// remember why so the home screen can say so.
+  Future<void> _loadBgState() async {
+    await BackgroundShare.stopIfHidden();
+    _bgEnabled = await BackgroundShare.isEnabled();
+    _bgHidden = await BackgroundShare.stoppedBecauseHidden();
+  }
+
+  Future<void> _recheckBg() async {
+    if (!_bgSupported) return;
+    await _loadBgState();
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _dismissBgHidden() async {
+    await BackgroundShare.clearStoppedBecauseHidden();
+    if (mounted) setState(() => _bgHidden = false);
+  }
+
+  /// Shown after background sharing was switched off because its
+  /// notification couldn't be seen.
+  Widget _bgHiddenNotice() {
+    if (!_bgHidden || _bgEnabled) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Material(
+        color: Colors.white,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+          side: const BorderSide(color: Brand.pebble),
+        ),
+        child: ListTile(
+          leading: const Icon(Icons.notifications_off_outlined),
+          title: const Text('Background sharing was turned off'),
+          subtitle: const Text(
+            "Notifications are off for Cairn, so you couldn't see it was "
+            'sharing. Turn them on to use it again.',
+            style: TextStyle(fontSize: 12),
+          ),
+          onTap: BackgroundShare.openAppSettings,
+          trailing: IconButton(
+            icon: const Icon(Icons.close),
+            tooltip: 'Dismiss',
+            onPressed: _dismissBgHidden,
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _openScan() async {
@@ -511,6 +572,7 @@ class _HomeScreenState extends State<HomeScreen> {
               ],
             ),
             if (_bgSupported) ...[
+              _bgHiddenNotice(),
               const SizedBox(height: 16),
               Card(
                 margin: EdgeInsets.zero,

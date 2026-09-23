@@ -31,7 +31,38 @@ class BackgroundShareUx {
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Location permission is needed to share.')));
         return false;
+      case BgEnableResult.needsNotifications:
+        await _openNotificationSettings(context);
+        return false;
     }
+  }
+
+  /// Notifications are off, so the "Sharing your location" notification would
+  /// be invisible. Explain, and send the user to turn them on.
+  static Future<void> _openNotificationSettings(BuildContext context) async {
+    final go = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        icon: const Icon(Icons.notifications_off_outlined),
+        title: const Text('Turn on notifications first'),
+        content: const Text(
+          'While Cairn shares in the background it shows a permanent '
+          'notification, so you always know your location is being shared. '
+          "Notifications are off for Cairn, so you wouldn't see it.\n\n"
+          'On the next screen, open Notifications and turn them on, then '
+          'come back and switch this on.',
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: const Text('Cancel')),
+          FilledButton(
+              onPressed: () => Navigator.pop(context, true),
+              child: const Text('Open settings')),
+        ],
+      ),
+    );
+    if (go == true) await BackgroundShare.openAppSettings();
   }
 
   static Future<bool> _disclosure(BuildContext context) async {
