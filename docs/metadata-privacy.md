@@ -156,6 +156,9 @@ Blunt the "when" signal:
   heartbeat (the background service was already a fixed 2 min), so server-visible
   write timing no longer tracks movement. The map still tracks own-position live
   and locally. Net: fewer writes while moving, so this is also a battery win.
+  Foreground sharing has since moved out of the map into `ForegroundShare`: it
+  now runs whenever the app is open (any screen), on the same fixed 30 s
+  cadence, and stops as soon as the app is backgrounded.
 - `last_seen` presence heartbeat — **deferred**: it powers the admin dashboard;
   the team chose to keep it (see roadmap). Revisit if the admin presence view
   is dropped.

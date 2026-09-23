@@ -21,7 +21,9 @@ class NotificationService {
   /// and ask for notification permission (Android 13+, iOS).
   static Future<void> init() async {
     if (!_supported || _ready) return;
-    const android = AndroidInitializationSettings('@mipmap/ic_launcher');
+    // Status-bar icon: the Cairn mark as a white silhouette (a full-colour
+    // launcher icon would render as a plain blob).
+    const android = AndroidInitializationSettings('@drawable/ic_stat_cairn');
     const ios = DarwinInitializationSettings(
       requestAlertPermission: true,
       requestBadgePermission: false,

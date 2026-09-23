@@ -29,11 +29,19 @@ enum BgEnableResult {
 
   /// Location permission was denied.
   denied,
+
+  /// Location is fine, but notifications are off, so the "Sharing your
+  /// location" notification would be invisible. Not started — the user must
+  /// turn notifications on first (Android won't re-prompt once refused twice).
+  needsNotifications,
 }
 
 const _channelId = 'cairn_location';
 const _notifId = 8888;
 const _enabledKey = 'bg_share_enabled';
+// Set when sharing was switched off because its notification couldn't be seen,
+// so the app can tell the user why the toggle is off. Cleared on re-enable.
+const _stoppedHiddenKey = 'bg_share_stopped_hidden';
 const _storage = FlutterSecureStorage();
 
 /// Keeps sharing location with contacts while the app is closed, via an Android
@@ -72,19 +80,43 @@ class BackgroundShare {
       ),
     );
 
-    // Resume the service if the user had it on.
-    if (await isEnabled() && !(await _service.isRunning())) {
-      await _service.startService();
+    // Resume the service if the user had it on — and make sure it's NOT
+    // running if they didn't (the plugin's watchdog can resurrect it; see
+    // onStart).
+    final running = await _service.isRunning();
+    if (await isEnabled()) {
+      if (!running) await _service.startService();
+    } else if (running) {
+      _service.invoke('stop');
     }
   }
 
   static Future<bool> isEnabled() async =>
       (await _storage.read(key: _enabledKey)) == '1';
 
+  /// Whether sharing was switched off because notifications were off.
+  static Future<bool> stoppedBecauseHidden() async =>
+      (await _storage.read(key: _stoppedHiddenKey)) == '1';
+
+  static Future<void> clearStoppedBecauseHidden() =>
+      _storage.delete(key: _stoppedHiddenKey);
+
+  /// If background sharing is on but its notification can't be seen (the user
+  /// turned notifications off since), switch it off. Returns true if it did.
+  static Future<bool> stopIfHidden() async {
+    if (!await isEnabled() || await notificationVisible()) return false;
+    await _storage.write(key: _stoppedHiddenKey, value: '1');
+    await disable();
+    return true;
+  }
+
   /// Open the app's system settings page (Permissions → Location) so the user
   /// can pick "Allow all the time" — the only way to grant background location
   /// on Android 11+.
   static Future<void> openAppLocationSettings() => Geolocator.openAppSettings();
+
+  /// Open the app's system settings page (where Notifications can be enabled).
+  static Future<void> openAppSettings() => Geolocator.openAppSettings();
 
   /// Try to start background sharing.
   ///
@@ -110,7 +142,10 @@ class BackgroundShare {
     // The foreground service shows a permanent notification; on Android 13+ that
     // needs the POST_NOTIFICATIONS runtime permission or the notification (and
     // the user's only signal that sharing is on) is silently hidden.
+    // Promise kept: never share in the background without that notification.
     await _ensureNotificationPermission();
+    if (!await notificationVisible()) return BgEnableResult.needsNotifications;
+    await _storage.delete(key: _stoppedHiddenKey);
     await _storage.write(key: _enabledKey, value: '1');
     if (!await _service.isRunning()) await _service.startService();
     return BgEnableResult.enabled;
@@ -125,6 +160,25 @@ class BackgroundShare {
         await android?.requestNotificationsPermission();
       }
     } catch (_) {/* older Android / plugin no-op — notification still posts */}
+  }
+
+  /// Whether the "Sharing your location" notification can actually be seen:
+  /// app notifications allowed AND its channel not silenced. Non-Android (no
+  /// plugin implementation) counts as visible.
+  static Future<bool> notificationVisible() async {
+    try {
+      final android = FlutterLocalNotificationsPlugin()
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (android == null) return true;
+      if (await android.areNotificationsEnabled() == false) return false;
+      for (final c in await android.getNotificationChannels() ?? const []) {
+        if (c.id == _channelId && c.importance == Importance.none) return false;
+      }
+      return true;
+    } catch (_) {
+      return true; // can't query (plugin unavailable) — don't block the feature
+    }
   }
 
   static Future<void> disable() async {
@@ -144,6 +198,23 @@ void onStart(ServiceInstance service) async {
     tickTimer?.cancel();
     service.stopSelf();
   });
+
+  // The plugin's watchdog alarm restarts this service whenever it died without
+  // an explicit stop (app killed or updated, a lost 'stop' message), regardless
+  // of the user's setting. So never trust being started: share only while the
+  // user has background sharing ON. stopSelf() also cancels the watchdog.
+  Future<bool> stillEnabled() async {
+    try {
+      return (await _storage.read(key: _enabledKey)) == '1';
+    } catch (_) {
+      return false; // can't confirm consent → don't share
+    }
+  }
+
+  if (!await stillEnabled()) {
+    service.stopSelf();
+    return;
+  }
 
   // The background isolate has its own globals — set them up from scratch.
   await initPocketBase();
@@ -258,6 +329,18 @@ void onStart(ServiceInstance service) async {
   // battery drains or the phone is plugged in, so we re-arm a one-shot Timer
   // each time rather than a fixed Timer.periodic.
   Future<void> tick() async {
+    if (!await stillEnabled()) {
+      service.stopSelf();
+      return;
+    }
+    // Notifications turned off while the app was closed → the user can no
+    // longer see that sharing is on, so stop (and let the app explain why).
+    if (!await BackgroundShare.notificationVisible()) {
+      await _storage.write(key: _stoppedHiddenKey, value: '1');
+      await _storage.write(key: _enabledKey, value: '0');
+      service.stopSelf();
+      return;
+    }
     final strategy = await currentStrategy();
     // Surface the current mode in the persistent notification.
     if (service is AndroidServiceInstance) {

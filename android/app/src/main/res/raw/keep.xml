@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- ic_stat_cairn is only referenced by name from Dart
+     (NotificationService), so tell the release resource shrinker to keep it. -->
+<resources xmlns:tools="http://schemas.android.com/tools"
+    tools:keep="@drawable/ic_stat_cairn" />

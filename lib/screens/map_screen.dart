@@ -6,12 +6,9 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
-import 'package:geolocator/geolocator.dart';
 import 'package:pocketbase/pocketbase.dart';
-import '../services/auth_service.dart';
 import '../services/background_share.dart';
-import '../services/history_service.dart';
-import '../services/location_service.dart';
+import '../services/foreground_share.dart';
 import '../services/location_sharing_service.dart';
 import '../services/nickname_service.dart';
 import '../services/notification_service.dart';
@@ -28,10 +25,15 @@ import 'history_screen.dart';
 import 'places_screen.dart';
 
 /// Live map: shows the device's own location AND paired contacts' locations
-/// (decrypted from their encrypted shares), and shares this device's location
-/// with them while the map is open.
+/// (decrypted from their encrypted shares). Sharing itself is app-wide — see
+/// [ForegroundShare] — so this screen only follows the local position.
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  /// Embedded: render just the map and its buttons (no app bar) so it can sit
+  /// inside another screen — the map-first home layout. [bottomInset] keeps
+  /// the buttons clear of whatever overlaps the map's bottom edge.
+  final bool embedded;
+  final double bottomInset;
+  const MapScreen({super.key, this.embedded = false, this.bottomInset = 0});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -41,18 +43,20 @@ class _MapScreenState extends State<MapScreen> {
   final _map = MapController();
   static const _fallback = LatLng(51.5074, -0.1278);
 
+  final _share = ForegroundShare.instance;
   LatLng? _me;
-  Position? _lastPos;
+  bool _centred = false; // snapped to my first fix yet?
   double? _heading; // GPS course to point my direction cone at; null = hide it
   bool _follow = false; // keep the map centred on me as I move
   Map<String, ContactLocation> _contacts = {};
   List<Place> _places = [];
   List<SharedPin> _sharedPins = [];
-  String? _error;
+  // A location problem (off / permission refused), shown only while I have no
+  // position at all — contacts stay visible either way.
+  String? get _error => _me == null ? _share.error.value : null;
 
-  StreamSubscription<Position>? _posSub;
   Future<void> Function()? _unsub;
-  Timer? _heartbeat;
+  Timer? _staleTimer;
 
   @override
   void initState() {
@@ -75,90 +79,58 @@ class _MapScreenState extends State<MapScreen> {
   }
 
   Future<void> _start() async {
+    // My own position comes from the app-wide ForegroundShare (which also
+    // does the sharing, recording and fixed-cadence publishing). It shows the
+    // cached last-known fix first, so the map isn't blocked on a precise one.
+    final p = _share.position.value;
+    if (p != null) {
+      _me = LatLng(p.latitude, p.longitude);
+      _heading = coneHeading(speed: p.speed, heading: p.heading);
+      _centred = true; // the map's initialCenter already uses it
+    }
+    _share.position.addListener(_onPosition);
+    _share.error.addListener(_onShareError);
+
+    // Staleness is time-based, so re-evaluate on a timer (not just on
+    // incoming shares) to catch a contact who simply stopped sharing — and
+    // rebuild so pin labels ("live", "5m ago") keep ageing when nothing new
+    // arrives.
+    _staleTimer = Timer.periodic(const Duration(seconds: 30), (_) {
+      unawaited(_checkStale());
+      if (mounted) setState(() {});
+    });
+
     // Receive contacts' locations regardless of our own GPS state.
-    // (Guard so a Retry after a GPS error doesn't subscribe twice.)
-    _unsub ??= await LocationSharingService.subscribe((map) {
+    final unsub = await LocationSharingService.subscribe((map) {
       if (!mounted) return;
       setState(() => _contacts = map);
       unawaited(_checkStale());
     });
-
-    // Show the map straight away, centred on the last cached fix. A precise
-    // fix can take several seconds (high-accuracy GPS, cold start, indoors),
-    // and blocking the whole screen on it is what made the map feel slow to
-    // load. The basemap and contacts are usable immediately; we refine our own
-    // position below. Don't record this cached (possibly stale) fix into the
-    // trail — that's for live positions only.
-    final last = await LocationService.lastKnown();
-    if (!mounted) return;
-    if (last != null) _onPosition(last, recenter: true, record: false);
-
-    try {
-      final pos = await LocationService.current();
-      // The fix above can take several seconds; the user may have left the
-      // screen meanwhile. Bail before touching state or the map controller.
-      if (!mounted) return;
-      // Only recentre if we haven't already snapped to the cached fix, so we
-      // don't yank the map from under a user who's started panning.
-      _onPosition(pos, recenter: _me == null);
-      _publish(pos); // one share on first fix so contacts aren't left blank
-
-      _posSub = LocationService.stream().listen((p) => _onPosition(p));
-      // Publish on a FIXED cadence, not per movement. The map tracks our own
-      // position live and locally, but shares go out every 30s whether we're
-      // moving or standing still — so the server can't read our movement /
-      // activity timing off the share update times (a metadata side-channel).
-      _heartbeat = Timer.periodic(const Duration(seconds: 30), (_) {
-        if (_lastPos != null) _publish(_lastPos!);
-        // Staleness is time-based, so re-evaluate on a timer (not just on
-        // incoming shares) to catch a contact who simply stopped sharing.
-        unawaited(_checkStale());
-      });
-    } catch (e) {
-      if (!mounted) return;
-      setState(() {
-        // If a cached fix already put us on the map, keep showing it rather
-        // than replacing the whole screen with an error card.
-        if (_me == null) _error = e.toString();
-      });
+    if (mounted) {
+      _unsub = unsub;
+    } else {
+      unsub(); // left the screen while subscribing
     }
   }
 
-  void _onPosition(Position p, {bool recenter = false, bool record = true}) {
-    _lastPos = p;
-    // Record my own trail (sampled; the geofence monitor flushes periodically).
-    final me = AuthService.currentUser;
-    if (record && me != null) {
-      HistoryService.record(
-        subject: me.id,
-        lat: p.latitude,
-        lng: p.longitude,
-        ts: DateTime.now().toUtc(),
-        accuracy: p.accuracy,
-      );
-    }
-    if (!mounted) return; // moving a disposed MapController throws
+  void _onPosition() {
+    final p = _share.position.value;
+    if (p == null || !mounted) return; // moving a disposed controller throws
     setState(() {
       _me = LatLng(p.latitude, p.longitude);
       _heading = coneHeading(speed: p.speed, heading: p.heading);
     });
-    if (recenter) {
+    if (!_centred) {
+      _centred = true;
       _map.move(_me!, 14);
     } else if (_follow) {
       // Follow mode: keep me centred as I move, without changing zoom.
       _map.move(_me!, _map.camera.zoom);
     }
-    // Note: no publish here. Shares go out on a fixed 30s cadence (the
-    // heartbeat), not per movement, so the server can't infer our movement /
-    // activity timing from share-update times. The first fix is shared once in
-    // _start().
   }
 
-  Future<void> _publish(Position p) async {
-    try {
-      await LocationSharingService.publish(
-          lat: p.latitude, lng: p.longitude, accuracy: p.accuracy);
-    } catch (_) {/* offline / no contacts — fine */}
+  void _onShareError() {
+    if (mounted) setState(() {});
   }
 
   /// Fire a one-off local notification when a contact crosses into "stale"
@@ -191,8 +163,9 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   void dispose() {
-    _posSub?.cancel();
-    _heartbeat?.cancel();
+    _share.position.removeListener(_onPosition);
+    _share.error.removeListener(_onShareError);
+    _staleTimer?.cancel();
     _unsub?.call();
     super.dispose();
   }
@@ -421,125 +394,140 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fabs = _fabs();
+    if (widget.embedded) {
+      return Stack(
+        children: [
+          _body(),
+          if (fabs != null)
+            Positioned(
+              right: 16,
+              bottom: widget.bottomInset + 16,
+              child: fabs,
+            ),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text('Map · ${_contacts.length} sharing'),
       ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: _me ?? _fallback,
-              initialZoom: _me == null ? 3 : 14,
-              onLongPress: (_, point) => _onLongPress(point),
-            ),
-            children: [
-              // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
-              // — calmer and far less visually loud than raw OSM tiles, so
-              // contacts' pins are what stands out. This layer already carries
-              // its own place labels. Key-less; for a fully self-hosted stack,
-              // point this at your own tile server instead.
-              TileLayer(
-                urlTemplate:
-                    'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-                userAgentPackageName: 'uk.cappylabs.cairn',
-                maxNativeZoom: 16,
-              ),
-              CircleLayer(circles: _placeCircles()),
-              MarkerLayer(markers: _placeMarkers()),
-              MarkerLayer(markers: _sharedPinMarkers()),
-              MarkerLayer(markers: _markers()),
-              const RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution('© Esri'),
-                  TextSourceAttribution('© OpenStreetMap contributors'),
-                ],
-              ),
-            ],
-          ),
-          // Non-blocking "locating" chip: the map (basemap + contacts) stays
-          // visible and interactive while we acquire our own precise fix,
-          // rather than a full-screen spinner hiding everything.
-          if (_me == null && _error == null)
-            const SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: _LocatingChip(),
-                ),
-              ),
-            ),
-          if (_error != null)
-            Center(
-              child: Card(
-                margin: const EdgeInsets.all(24),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_disabled, size: 40),
-                      const SizedBox(height: 8),
-                      Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 4),
-                      const Text(
-                        "You can still see contacts below; sharing your own "
-                        "location needs permission.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: () {
-                          setState(() => _error = null);
-                          _start();
-                        },
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      floatingActionButton: _me == null
-          ? null
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Follow: keep the map on me as I move (pairs with the heading
-                // cone). Highlighted when on.
-                FloatingActionButton.small(
-                  heroTag: 'follow',
-                  tooltip: _follow ? 'Stop following' : 'Follow me',
-                  backgroundColor: _follow ? Brand.slate : null,
-                  foregroundColor: _follow ? Colors.white : null,
-                  onPressed: _toggleFollow,
-                  child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
-                ),
-                const SizedBox(height: 8),
-                // Frame me + everyone currently sharing.
-                if (_contacts.isNotEmpty)
-                  FloatingActionButton.small(
-                    heroTag: 'fit',
-                    tooltip: 'Fit everyone',
-                    onPressed: _fitEveryone,
-                    child: const Icon(Icons.zoom_out_map),
-                  ),
-                if (_contacts.isNotEmpty) const SizedBox(height: 8),
-                FloatingActionButton(
-                  heroTag: 'centre',
-                  tooltip: 'Centre on me',
-                  onPressed: () => _map.move(_me!, 15),
-                  child: const Icon(Icons.my_location),
-                ),
-              ],
-            ),
+      body: _body(),
+      floatingActionButton: fabs,
     );
   }
+
+  Widget _body() => Stack(
+    children: [
+      FlutterMap(
+        mapController: _map,
+        options: MapOptions(
+          initialCenter: _me ?? _fallback,
+          initialZoom: _me == null ? 3 : 14,
+          onLongPress: (_, point) => _onLongPress(point),
+        ),
+        children: [
+          // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
+          // — calmer and far less visually loud than raw OSM tiles, so
+          // contacts' pins are what stands out. This layer already carries
+          // its own place labels. Key-less; for a fully self-hosted stack,
+          // point this at your own tile server instead.
+          TileLayer(
+            urlTemplate:
+                'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            userAgentPackageName: 'uk.cappylabs.cairn',
+            maxNativeZoom: 16,
+          ),
+          CircleLayer(circles: _placeCircles()),
+          MarkerLayer(markers: _placeMarkers()),
+          MarkerLayer(markers: _sharedPinMarkers()),
+          MarkerLayer(markers: _markers()),
+          const RichAttributionWidget(
+            attributions: [
+              TextSourceAttribution('© Esri'),
+              TextSourceAttribution('© OpenStreetMap contributors'),
+            ],
+          ),
+        ],
+      ),
+      // Non-blocking "locating" chip: the map (basemap + contacts) stays
+      // visible and interactive while we acquire our own precise fix,
+      // rather than a full-screen spinner hiding everything.
+      if (_me == null && _error == null)
+        const SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: _LocatingChip(),
+            ),
+          ),
+        ),
+      if (_error != null)
+        Center(
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_disabled, size: 40),
+                  const SizedBox(height: 8),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "You can still see contacts below; sharing your own "
+                    "location needs permission.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _share.retry,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+
+  Widget? _fabs() => _me == null
+      ? null
+      : Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Follow: keep the map on me as I move (pairs with the heading
+            // cone). Highlighted when on.
+            FloatingActionButton.small(
+              heroTag: 'follow',
+              tooltip: _follow ? 'Stop following' : 'Follow me',
+              backgroundColor: _follow ? Brand.slate : null,
+              foregroundColor: _follow ? Colors.white : null,
+              onPressed: _toggleFollow,
+              child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
+            ),
+            const SizedBox(height: 8),
+            // Frame me + everyone currently sharing.
+            if (_contacts.isNotEmpty)
+              FloatingActionButton.small(
+                heroTag: 'fit',
+                tooltip: 'Fit everyone',
+                onPressed: _fitEveryone,
+                child: const Icon(Icons.zoom_out_map),
+              ),
+            if (_contacts.isNotEmpty) const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'centre',
+              tooltip: 'Centre on me',
+              onPressed: () => _map.move(_me!, 15),
+              child: const Icon(Icons.my_location),
+            ),
+          ],
+        );
 
   void _toggleFollow() {
     setState(() => _follow = !_follow);

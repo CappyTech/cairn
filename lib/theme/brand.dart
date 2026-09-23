@@ -14,6 +14,12 @@ class Brand {
       seedColor: slate,
       primary: slate,
       secondary: lichen,
+      // Pin the container roles to the palette too; left to the seed they come
+      // out a Material blue/cyan (tonal buttons, FABs) that isn't on-brand.
+      primaryContainer: slate,
+      onPrimaryContainer: mist,
+      secondaryContainer: pebble,
+      onSecondaryContainer: slate,
       brightness: Brightness.light,
     );
     return ThemeData(
