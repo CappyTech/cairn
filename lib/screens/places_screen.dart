@@ -372,7 +372,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   bottom: 12,
                   child: FloatingActionButton.small(
                     heroTag: 'myloc',
-                    tooltip: 'Use my location',
+                    tooltip: 'Use current location',
                     onPressed: () => _useMyLocation(),
                     child: const Icon(Icons.my_location),
                   ),

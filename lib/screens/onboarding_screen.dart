@@ -361,7 +361,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         OutlinedButton.icon(
           onPressed: () => _addFirst(const QrScreen()),
           icon: const Icon(Icons.qr_code_2),
-          label: const Text('Show my code'),
+          label: const Text('Show your code'),
         ),
         const SizedBox(height: 8),
         OutlinedButton.icon(
