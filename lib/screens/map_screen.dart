@@ -220,7 +220,7 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.place, size: 13, color: Brand.lichen),
+                const Icon(Icons.place, size: 13, color: Brand.slate),
                 const SizedBox(width: 3),
                 Flexible(
                   child: Text(p.name,
@@ -263,7 +263,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.push_pin, size: 13, color: Brand.lichen),
+                      const Icon(Icons.push_pin, size: 13, color: Brand.slate),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
@@ -280,7 +280,7 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
-                const Icon(Icons.push_pin, color: Brand.lichen, size: 26, shadows: [
+                Icon(Icons.push_pin, color: context.cairn.ink, size: 26, shadows: [
                   Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
                 ]),
               ],
@@ -344,7 +344,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
             const SizedBox(height: 2),
             // Teardrop pin with a white halo so it reads on the pale basemap.
-            Icon(Icons.location_on, color: color, size: 36, shadows: const [
+            Icon(Icons.location_on, color: context.cairn.ink, size: 36, shadows: const [
               Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
             ]),
           ],

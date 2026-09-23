@@ -240,7 +240,7 @@ class _AdminScreenState extends State<AdminScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
+          Icon(icon, color: context.cairn.ink, size: 20),
           const SizedBox(height: 6),
           Text(value,
               style:
@@ -274,7 +274,7 @@ class _AdminScreenState extends State<AdminScreen> {
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.circle, size: 12, color: color),
+              Icon(Icons.circle, size: 12, color: context.cairn.ink),
               Text(label, style: TextStyle(color: color, fontSize: 11)),
             ],
           ),
@@ -324,7 +324,7 @@ class _AdminScreenState extends State<AdminScreen> {
                   s.getStringValue('recipient');
               final bytes = s.getStringValue('ciphertext').length;
               return ListTile(
-                leading: const Icon(Icons.lock, color: Colors.deepPurple),
+                leading: const Icon(Icons.lock),
                 title: Text('$sender  →  $recip'),
                 subtitle: Text('🔒 encrypted · $bytes bytes',
                     style: const TextStyle(fontSize: 12)),
@@ -347,7 +347,7 @@ class _AdminScreenState extends State<AdminScreen> {
             names[p.getStringValue('target')] ?? p.getStringValue('target');
         final from = names[p.getStringValue('from')] ?? p.getStringValue('from');
         return ListTile(
-          leading: const Icon(Icons.hourglass_bottom, color: Colors.orange),
+          leading: const Icon(Icons.hourglass_bottom),
           title: Text('$from  →  $target'),
           subtitle: const Text('waiting for the target device to reciprocate',
               style: TextStyle(fontSize: 12)),

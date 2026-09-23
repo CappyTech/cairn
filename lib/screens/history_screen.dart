@@ -406,7 +406,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           alignment: Alignment.center,
           clipBehavior: Clip.none,
           children: [
-            const Icon(Icons.circle, size: 14, color: Brand.slate),
+            Icon(Icons.circle, size: 14, color: context.cairn.ink),
             Transform.translate(
               offset: const Offset(0, -20),
               child: Container(
@@ -645,7 +645,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 o.value == current
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                color: o.value == current ? Brand.lichen : context.cairn.muted,
+                
               ),
               title: Text(o.label),
               onTap: () => Navigator.pop(context, o),

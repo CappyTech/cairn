@@ -160,8 +160,7 @@ class ContactTile extends StatelessWidget {
         title: Text(label),
         trailing: Icon(
           on ? Icons.toggle_on : Icons.toggle_off,
-          color: on ? Brand.lichen : context.cairn.muted,
-          size: 26,
+                    size: 26,
         ),
       ),
     );
@@ -191,7 +190,7 @@ class ContactTile extends StatelessWidget {
           children: [
             Row(
               children: [
-                Icon(Icons.gpp_maybe, color: err),
+                const Icon(Icons.gpp_maybe),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Text(name,

@@ -356,12 +356,12 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   ],
                 ),
                 // Fixed centre pin (sits above the map, marks the chosen point).
-                const IgnorePointer(
+                IgnorePointer(
                   child: Padding(
                     padding: EdgeInsets.only(bottom: 34),
                     child: Icon(Icons.place,
                         size: 40,
-                        color: Brand.slate,
+                        color: context.cairn.ink,
                         shadows: [
                           Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1))
                         ]),
