@@ -1,9 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/pairing_service.dart';
+import '../theme/brand.dart';
 
-/// Scans another device's pairing QR (camera), with a manual paste fallback
-/// for platforms without a camera (e.g. the web dev preview).
+/// Scans another device's pairing QR (camera), with a paste fallback for
+/// remote invites and for platforms without a camera (e.g. the web preview).
 class ScanScreen extends StatefulWidget {
   const ScanScreen({super.key});
 
@@ -12,19 +13,31 @@ class ScanScreen extends StatefulWidget {
 }
 
 class _ScanScreenState extends State<ScanScreen> {
-  bool _handled = false;
+  bool _busy = false; // pairing with the server after a scan / paste
   String? _error;
+  // The camera reports a code on every frame it's in view; don't retry one
+  // that just failed until something else is scanned (pasting still retries).
+  String? _lastFailed;
 
-  Future<void> _handle(String raw) async {
-    if (_handled) return;
-    _handled = true;
+  Future<void> _handle(String raw, {bool fromCamera = false}) async {
+    if (_busy || (fromCamera && raw == _lastFailed)) return;
+    setState(() {
+      _busy = true;
+      _error = null;
+    });
     try {
       final name = await PairingService.pairFromPayload(raw);
       if (mounted) Navigator.pop(context, name);
     } catch (e) {
+      if (!mounted) return;
+      _lastFailed = raw;
       setState(() {
-        _error = e.toString();
-        _handled = false; // allow retry
+        // Our own messages are plain strings; anything else is a network or
+        // server failure, which isn't worth showing raw.
+        _error = e is String
+            ? e
+            : "Couldn't connect. Check your connection and try again.";
+        _busy = false; // allow retry
       });
     }
   }
@@ -59,45 +72,66 @@ class _ScanScreenState extends State<ScanScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Scan a code'),
-        actions: [
-          IconButton(
-            tooltip: 'Paste instead',
-            icon: const Icon(Icons.content_paste),
-            onPressed: _pasteManually,
-          ),
-        ],
-      ),
+      appBar: AppBar(title: const Text('Scan a code')),
       body: Column(
         children: [
           Expanded(
-            child: MobileScanner(
-              onDetect: (capture) {
-                for (final barcode in capture.barcodes) {
-                  final raw = barcode.rawValue;
-                  if (raw != null && raw.isNotEmpty) {
-                    _handle(raw);
-                    break;
-                  }
-                }
-              },
-              errorBuilder: (context, error) => _CameraFallback(
-                onPaste: _pasteManually,
-                message: error.errorDetails?.message,
-              ),
+            child: Stack(
+              fit: StackFit.expand,
+              children: [
+                MobileScanner(
+                  onDetect: (capture) {
+                    for (final barcode in capture.barcodes) {
+                      final raw = barcode.rawValue;
+                      if (raw != null && raw.isNotEmpty) {
+                        _handle(raw, fromCamera: true);
+                        break;
+                      }
+                    }
+                  },
+                  // Until the first frame arrives: say so, instead of a blank
+                  // screen that looks broken.
+                  placeholderBuilder: (context) => const _CameraStarting(),
+                  // Where to aim. Scanning still reads the whole frame.
+                  overlayBuilder: (context, constraints) =>
+                      const _ScanFrame(),
+                  errorBuilder: (context, error) => _CameraFallback(
+                    message: error.errorDetails?.message,
+                  ),
+                ),
+                if (_busy) const _Connecting(),
+              ],
             ),
           ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.all(16),
-              child: Text(_error!,
-                  style: TextStyle(color: Theme.of(context).colorScheme.error)),
+          SafeArea(
+            top: false,
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_error != null) ...[
+                    Text(_error!,
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                            color: Theme.of(context).colorScheme.error)),
+                    const SizedBox(height: 8),
+                  ],
+                  const Text('Point your camera at their Cairn code',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(color: Brand.slate)),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    width: double.infinity,
+                    child: OutlinedButton.icon(
+                      onPressed: _busy ? null : _pasteManually,
+                      icon: const Icon(Icons.content_paste),
+                      label: const Text('Paste code instead'),
+                    ),
+                  ),
+                ],
+              ),
             ),
-          const Padding(
-            padding: EdgeInsets.all(16),
-            child: Text('Point the camera at their QR code',
-                style: TextStyle(color: Colors.grey)),
           ),
         ],
       ),
@@ -105,10 +139,104 @@ class _ScanScreenState extends State<ScanScreen> {
   }
 }
 
+/// Shown while the camera starts up.
+class _CameraStarting extends StatelessWidget {
+  const _CameraStarting();
+
+  @override
+  Widget build(BuildContext context) {
+    return const ColoredBox(
+      color: Brand.slate,
+      child: Center(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircularProgressIndicator(color: Brand.mist),
+            SizedBox(height: 12),
+            Text('Starting camera…', style: TextStyle(color: Brand.mist)),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// A rounded square to aim the QR code into, with the rest of the preview
+/// dimmed.
+class _ScanFrame extends StatelessWidget {
+  const _ScanFrame();
+
+  @override
+  Widget build(BuildContext context) {
+    // The scanner passes loose constraints to the overlay; fill the preview.
+    return IgnorePointer(
+      child: SizedBox.expand(child: CustomPaint(painter: _ScanFramePainter())),
+    );
+  }
+}
+
+class _ScanFramePainter extends CustomPainter {
+  @override
+  void paint(Canvas canvas, Size size) {
+    final side = size.shortestSide * 0.7;
+    final frame = RRect.fromRectAndRadius(
+      Rect.fromCenter(center: size.center(Offset.zero), width: side, height: side),
+      const Radius.circular(20),
+    );
+    canvas.drawPath(
+      Path.combine(
+        PathOperation.difference,
+        Path()..addRect(Offset.zero & size),
+        Path()..addRRect(frame),
+      ),
+      Paint()..color = Colors.black.withValues(alpha: 0.45),
+    );
+    canvas.drawRRect(
+      frame,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 3,
+    );
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+}
+
+/// Covers the preview while the pairing request goes to the server.
+class _Connecting extends StatelessWidget {
+  const _Connecting();
+
+  @override
+  Widget build(BuildContext context) {
+    return ColoredBox(
+      color: Colors.black.withValues(alpha: 0.55),
+      child: const Center(
+        child: Card(
+          child: Padding(
+            padding: EdgeInsets.symmetric(horizontal: 24, vertical: 20),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2.5)),
+                SizedBox(width: 16),
+                Text('Connecting…'),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
 class _CameraFallback extends StatelessWidget {
-  final VoidCallback onPaste;
   final String? message;
-  const _CameraFallback({required this.onPaste, this.message});
+  const _CameraFallback({this.message});
 
   @override
   Widget build(BuildContext context) {
@@ -128,12 +256,10 @@ class _CameraFallback extends StatelessWidget {
                   textAlign: TextAlign.center,
                   style: const TextStyle(color: Colors.grey, fontSize: 12)),
             ],
-            const SizedBox(height: 16),
-            FilledButton.icon(
-              onPressed: onPaste,
-              icon: const Icon(Icons.content_paste),
-              label: const Text('Paste code instead'),
-            ),
+            const SizedBox(height: 8),
+            const Text('You can paste their invite code below instead.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: Brand.stone)),
           ],
         ),
       ),

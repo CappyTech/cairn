@@ -90,14 +90,14 @@ class PairingService {
     try {
       data = jsonDecode(raw) as Map<String, dynamic>;
     } catch (_) {
-      throw 'That QR code is not a valid invite.';
+      throw "That code isn't a valid Cairn invite.";
     }
     final theirId = data['id'] as String?;
     final theirName = (data['n'] ?? '') as String;
     final theirKey = data['k'] as String?;
     final theirNonce = data['s'] as String?;
     if (theirId == null || theirKey == null) {
-      throw 'That QR code is not a valid invite.';
+      throw "That code isn't a valid Cairn invite.";
     }
     if (theirId == me.id) throw "That's your own code 🙂";
 

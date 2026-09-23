@@ -123,7 +123,7 @@ class _QrScreenState extends State<QrScreen> {
                 child: Text(
                   'Sends a single-use invite that expires in 24 hours. Send it '
                   'over a channel you trust — whoever receives it can pair with '
-                  'you. They open Scan → "Paste instead".',
+                  'you. They open Scan → "Paste code instead".',
                   textAlign: TextAlign.center,
                   style: TextStyle(color: Colors.grey, fontSize: 12),
                 ),
