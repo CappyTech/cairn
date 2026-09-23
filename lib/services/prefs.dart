@@ -15,9 +15,24 @@ class HistoryConsent {
       );
 }
 
+/// How the home screen is arranged — a per-device look preference.
+///  - [refined]: greeting, compact sharing card, then people (the default);
+///  - [people]: people fill the screen, sharing collapses to a status pill;
+///  - [map]: the live map is home, with a pull-up sheet of controls + people.
+enum HomeLayout { refined, people, map }
+
 /// Small on-device preferences.
 class Prefs {
   static const _s = FlutterSecureStorage();
+
+  static Future<HomeLayout> homeLayout() async {
+    final v = await _s.read(key: 'home_layout');
+    return HomeLayout.values.firstWhere((l) => l.name == v,
+        orElse: () => HomeLayout.refined);
+  }
+
+  static Future<void> setHomeLayout(HomeLayout v) async =>
+      _s.write(key: 'home_layout', value: v.name);
 
   /// Global privacy master-switch: when on, EVERY contact receives only
   /// approximate (rounded) location, regardless of their per-contact setting.

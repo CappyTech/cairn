@@ -28,7 +28,12 @@ import 'places_screen.dart';
 /// (decrypted from their encrypted shares). Sharing itself is app-wide — see
 /// [ForegroundShare] — so this screen only follows the local position.
 class MapScreen extends StatefulWidget {
-  const MapScreen({super.key});
+  /// Embedded: render just the map and its buttons (no app bar) so it can sit
+  /// inside another screen — the map-first home layout. [bottomInset] keeps
+  /// the buttons clear of whatever overlaps the map's bottom edge.
+  final bool embedded;
+  final double bottomInset;
+  const MapScreen({super.key, this.embedded = false, this.bottomInset = 0});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -385,122 +390,140 @@ class _MapScreenState extends State<MapScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final fabs = _fabs();
+    if (widget.embedded) {
+      return Stack(
+        children: [
+          _body(),
+          if (fabs != null)
+            Positioned(
+              right: 16,
+              bottom: widget.bottomInset + 16,
+              child: fabs,
+            ),
+        ],
+      );
+    }
     return Scaffold(
       appBar: AppBar(
         title: Text('Map · ${_contacts.length} sharing'),
       ),
-      body: Stack(
-        children: [
-          FlutterMap(
-            mapController: _map,
-            options: MapOptions(
-              initialCenter: _me ?? _fallback,
-              initialZoom: _me == null ? 3 : 14,
-              onLongPress: (_, point) => _onLongPress(point),
-            ),
-            children: [
-              // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
-              // — calmer and far less visually loud than raw OSM tiles, so
-              // contacts' pins are what stands out. This layer already carries
-              // its own place labels. Key-less; for a fully self-hosted stack,
-              // point this at your own tile server instead.
-              TileLayer(
-                urlTemplate:
-                    'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
-                userAgentPackageName: 'uk.cappylabs.cairn',
-                maxNativeZoom: 16,
-              ),
-              CircleLayer(circles: _placeCircles()),
-              MarkerLayer(markers: _placeMarkers()),
-              MarkerLayer(markers: _sharedPinMarkers()),
-              MarkerLayer(markers: _markers()),
-              const RichAttributionWidget(
-                attributions: [
-                  TextSourceAttribution('© Esri'),
-                  TextSourceAttribution('© OpenStreetMap contributors'),
-                ],
-              ),
-            ],
-          ),
-          // Non-blocking "locating" chip: the map (basemap + contacts) stays
-          // visible and interactive while we acquire our own precise fix,
-          // rather than a full-screen spinner hiding everything.
-          if (_me == null && _error == null)
-            const SafeArea(
-              child: Align(
-                alignment: Alignment.topCenter,
-                child: Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: _LocatingChip(),
-                ),
-              ),
-            ),
-          if (_error != null)
-            Center(
-              child: Card(
-                margin: const EdgeInsets.all(24),
-                child: Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      const Icon(Icons.location_disabled, size: 40),
-                      const SizedBox(height: 8),
-                      Text(_error!, textAlign: TextAlign.center),
-                      const SizedBox(height: 4),
-                      const Text(
-                        "You can still see contacts below; sharing your own "
-                        "location needs permission.",
-                        textAlign: TextAlign.center,
-                        style: TextStyle(color: Colors.grey, fontSize: 12),
-                      ),
-                      const SizedBox(height: 12),
-                      FilledButton(
-                        onPressed: _share.retry,
-                        child: const Text('Retry'),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-        ],
-      ),
-      floatingActionButton: _me == null
-          ? null
-          : Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                // Follow: keep the map on me as I move (pairs with the heading
-                // cone). Highlighted when on.
-                FloatingActionButton.small(
-                  heroTag: 'follow',
-                  tooltip: _follow ? 'Stop following' : 'Follow me',
-                  backgroundColor: _follow ? Brand.slate : null,
-                  foregroundColor: _follow ? Colors.white : null,
-                  onPressed: _toggleFollow,
-                  child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
-                ),
-                const SizedBox(height: 8),
-                // Frame me + everyone currently sharing.
-                if (_contacts.isNotEmpty)
-                  FloatingActionButton.small(
-                    heroTag: 'fit',
-                    tooltip: 'Fit everyone',
-                    onPressed: _fitEveryone,
-                    child: const Icon(Icons.zoom_out_map),
-                  ),
-                if (_contacts.isNotEmpty) const SizedBox(height: 8),
-                FloatingActionButton(
-                  heroTag: 'centre',
-                  tooltip: 'Centre on me',
-                  onPressed: () => _map.move(_me!, 15),
-                  child: const Icon(Icons.my_location),
-                ),
-              ],
-            ),
+      body: _body(),
+      floatingActionButton: fabs,
     );
   }
+
+  Widget _body() => Stack(
+    children: [
+      FlutterMap(
+        mapController: _map,
+        options: MapOptions(
+          initialCenter: _me ?? _fallback,
+          initialZoom: _me == null ? 3 : 14,
+          onLongPress: (_, point) => _onLongPress(point),
+        ),
+        children: [
+          // A muted, minimal light-grey basemap (Esri "Light Gray Canvas")
+          // — calmer and far less visually loud than raw OSM tiles, so
+          // contacts' pins are what stands out. This layer already carries
+          // its own place labels. Key-less; for a fully self-hosted stack,
+          // point this at your own tile server instead.
+          TileLayer(
+            urlTemplate:
+                'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+            userAgentPackageName: 'uk.cappylabs.cairn',
+            maxNativeZoom: 16,
+          ),
+          CircleLayer(circles: _placeCircles()),
+          MarkerLayer(markers: _placeMarkers()),
+          MarkerLayer(markers: _sharedPinMarkers()),
+          MarkerLayer(markers: _markers()),
+          const RichAttributionWidget(
+            attributions: [
+              TextSourceAttribution('© Esri'),
+              TextSourceAttribution('© OpenStreetMap contributors'),
+            ],
+          ),
+        ],
+      ),
+      // Non-blocking "locating" chip: the map (basemap + contacts) stays
+      // visible and interactive while we acquire our own precise fix,
+      // rather than a full-screen spinner hiding everything.
+      if (_me == null && _error == null)
+        const SafeArea(
+          child: Align(
+            alignment: Alignment.topCenter,
+            child: Padding(
+              padding: EdgeInsets.only(top: 8),
+              child: _LocatingChip(),
+            ),
+          ),
+        ),
+      if (_error != null)
+        Center(
+          child: Card(
+            margin: const EdgeInsets.all(24),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Icon(Icons.location_disabled, size: 40),
+                  const SizedBox(height: 8),
+                  Text(_error!, textAlign: TextAlign.center),
+                  const SizedBox(height: 4),
+                  const Text(
+                    "You can still see contacts below; sharing your own "
+                    "location needs permission.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                  ),
+                  const SizedBox(height: 12),
+                  FilledButton(
+                    onPressed: _share.retry,
+                    child: const Text('Retry'),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+    ],
+  );
+
+  Widget? _fabs() => _me == null
+      ? null
+      : Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Follow: keep the map on me as I move (pairs with the heading
+            // cone). Highlighted when on.
+            FloatingActionButton.small(
+              heroTag: 'follow',
+              tooltip: _follow ? 'Stop following' : 'Follow me',
+              backgroundColor: _follow ? Brand.slate : null,
+              foregroundColor: _follow ? Colors.white : null,
+              onPressed: _toggleFollow,
+              child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
+            ),
+            const SizedBox(height: 8),
+            // Frame me + everyone currently sharing.
+            if (_contacts.isNotEmpty)
+              FloatingActionButton.small(
+                heroTag: 'fit',
+                tooltip: 'Fit everyone',
+                onPressed: _fitEveryone,
+                child: const Icon(Icons.zoom_out_map),
+              ),
+            if (_contacts.isNotEmpty) const SizedBox(height: 8),
+            FloatingActionButton(
+              heroTag: 'centre',
+              tooltip: 'Centre on me',
+              onPressed: () => _map.move(_me!, 15),
+              child: const Icon(Icons.my_location),
+            ),
+          ],
+        );
 
   void _toggleFollow() {
     setState(() => _follow = !_follow);
