@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Overrides flutter_background_service's default "Sharing your location"
+     icon (a generic leaf) with the Cairn mark. Same name as the plugin's
+     resource so ours wins at merge time; -anydpi so Android picks it over the
+     plugin's per-density PNGs. -->
+<inset xmlns:android="http://schemas.android.com/apk/res/android"
+    android:drawable="@drawable/ic_stat_cairn" />

@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Cairn mark as a notification (status-bar) icon: three stacked stones and
+     the dot on top, from the brand mark's 100×100 geometry (cairn-mark-mono.svg,
+     CairnMark in lib/theme/brand.dart). Android draws small icons as a
+     single-colour silhouette, so only the shape matters; the fill is white. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="100"
+    android:viewportHeight="100">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M23,70h54a9,9 0,0 1,0 18h-54a9,9 0,0 1,0 -18z
+            M32.5,50h35a8.5,8.5 0,0 1,0 17h-35a8.5,8.5 0,0 1,0 -17z
+            M37.5,32h21a7.5,7.5 0,0 1,0 15h-21a7.5,7.5 0,0 1,0 -15z
+            M42,20a8,8 0,1 0,16 0a8,8 0,1 0,-16 0z" />
+</vector>
