@@ -578,7 +578,7 @@ class _MapScreenState extends State<MapScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => SingleChildScrollView(child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -596,7 +596,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
     if (!mounted) return;
     if (choice == 'place') {
@@ -694,7 +694,7 @@ class _MapScreenState extends State<MapScreen> {
           final pres = Presence.describe(updated: c.updated, now: DateTime.now());
           final precision = rec?.getStringValue('precision') ?? 'precise';
           final keyChanged = rec?.getStringValue('status') == 'key_changed';
-          return SafeArea(
+          return SingleChildScrollView(child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Column(
@@ -804,7 +804,7 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-          );
+          ));
         },
       ),
     );
@@ -820,7 +820,7 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => SafeArea(
+        builder: (ctx, setSheet) => SingleChildScrollView(child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             child: Column(
@@ -876,7 +876,7 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
-        ),
+        )),
       ),
     );
   }

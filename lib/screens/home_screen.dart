@@ -525,7 +525,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
+      builder: (context) => SingleChildScrollView(child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -544,7 +544,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
           ],
         ),
-      ),
+      )),
     );
     if (choice == 'qr') _openQr();
     if (choice == 'scan') await _openScan();
@@ -659,7 +659,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context: context,
         showDragHandle: true,
         builder: (context) => StatefulBuilder(
-          builder: (context, setSheet) => SafeArea(
+          builder: (context, setSheet) => SingleChildScrollView(child: SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -667,7 +667,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 8),
               ],
             ),
-          ),
+          )),
         ),
       );
 
