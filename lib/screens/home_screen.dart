@@ -15,6 +15,7 @@ import '../services/history_policy.dart';
 import '../services/location_sharing_service.dart';
 import '../services/presence.dart';
 import '../services/prefs.dart';
+import '../services/foreground_share.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
@@ -76,6 +77,9 @@ class _HomeScreenState extends State<HomeScreen> {
     // Watch for contacts arriving at / leaving my places, app-wide (not just on
     // the map). Safe to call repeatedly — it starts a single subscription.
     GeofenceMonitor.instance.start();
+    // Share my location whenever the app is open, not just on the map.
+    ForegroundShare.instance.error.addListener(_onShareError);
+    ForegroundShare.instance.start();
     _checkHistoryPolicy();
     // Freshness labels are time-based; re-render them periodically so "5m ago"
     // keeps counting up without needing new data.
@@ -215,6 +219,8 @@ class _HomeScreenState extends State<HomeScreen> {
     _unsub?.call();
     _presenceTimer?.cancel();
     _lifecycle.dispose();
+    ForegroundShare.instance.error.removeListener(_onShareError);
+    ForegroundShare.instance.stop();
     super.dispose();
   }
 
@@ -414,6 +420,33 @@ class _HomeScreenState extends State<HomeScreen> {
     if (mounted) setState(() => _bgHidden = false);
   }
 
+  void _onShareError() {
+    if (mounted) setState(() {});
+  }
+
+  /// A warning shown when the app can't share because location is off or
+  /// permission was refused — otherwise "sharing while open" would be untrue.
+  Widget _locationProblem() {
+    final err = ForegroundShare.instance.error.value;
+    if (err == null) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Material(
+        color: Theme.of(context).colorScheme.errorContainer,
+        borderRadius: BorderRadius.circular(12),
+        child: ListTile(
+          leading: const Icon(Icons.location_disabled),
+          title: const Text("You're not sharing your location"),
+          subtitle: Text(err, style: const TextStyle(fontSize: 12)),
+          trailing: TextButton(
+            onPressed: ForegroundShare.instance.retry,
+            child: const Text('Retry'),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Shown after background sharing was switched off because its
   /// notification couldn't be seen.
   Widget _bgHiddenNotice() {
@@ -571,6 +604,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+            _locationProblem(),
             if (_bgSupported) ...[
               _bgHiddenNotice(),
               const SizedBox(height: 16),
