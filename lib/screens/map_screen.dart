@@ -33,7 +33,12 @@ class MapScreen extends StatefulWidget {
   /// the buttons clear of whatever overlaps the map's bottom edge.
   final bool embedded;
   final double bottomInset;
-  const MapScreen({super.key, this.embedded = false, this.bottomInset = 0});
+
+  /// Set to a contact's peer id to centre the map on them (the wide Home
+  /// layout's people list drives this).
+  final ValueNotifier<String?>? focus;
+  const MapScreen(
+      {super.key, this.embedded = false, this.bottomInset = 0, this.focus});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -90,6 +95,7 @@ class _MapScreenState extends State<MapScreen> {
     }
     _share.position.addListener(_onPosition);
     _share.error.addListener(_onShareError);
+    widget.focus?.addListener(_onFocus);
 
     // Staleness is time-based, so re-evaluate on a timer (not just on
     // incoming shares) to catch a contact who simply stopped sharing — and
@@ -133,6 +139,14 @@ class _MapScreenState extends State<MapScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Centre on the contact named by [MapScreen.focus], if they're sharing.
+  void _onFocus() {
+    final c = _contacts[widget.focus?.value];
+    if (c == null || !mounted) return;
+    setState(() => _follow = false);
+    _map.move(LatLng(c.lat, c.lng), math.max(_map.camera.zoom, 15));
+  }
+
   /// Fire a one-off local notification when a contact crosses into "stale"
   /// (stopped sharing for a while), and re-arm once they're fresh again. The
   /// edge-trigger state is the shared, persisted [StaleAlertStore] — the same
@@ -165,6 +179,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _share.position.removeListener(_onPosition);
     _share.error.removeListener(_onShareError);
+    widget.focus?.removeListener(_onFocus);
     _staleTimer?.cancel();
     _unsub?.call();
     super.dispose();
@@ -205,7 +220,7 @@ class _MapScreenState extends State<MapScreen> {
               mainAxisSize: MainAxisSize.min,
               mainAxisAlignment: MainAxisAlignment.center,
               children: [
-                const Icon(Icons.place, size: 13, color: Brand.lichen),
+                const Icon(Icons.place, size: 13, color: Brand.slate),
                 const SizedBox(width: 3),
                 Flexible(
                   child: Text(p.name,
@@ -248,7 +263,7 @@ class _MapScreenState extends State<MapScreen> {
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.push_pin, size: 13, color: Brand.lichen),
+                      const Icon(Icons.push_pin, size: 13, color: Brand.slate),
                       const SizedBox(width: 4),
                       Flexible(
                         child: Text(
@@ -265,7 +280,7 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
-                const Icon(Icons.push_pin, color: Brand.lichen, size: 26, shadows: [
+                Icon(Icons.push_pin, color: context.cairn.ink, size: 26, shadows: [
                   Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
                 ]),
               ],
@@ -329,7 +344,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
             const SizedBox(height: 2),
             // Teardrop pin with a white halo so it reads on the pale basemap.
-            Icon(Icons.location_on, color: color, size: 36, shadows: const [
+            Icon(Icons.location_on, color: context.cairn.ink, size: 36, shadows: const [
               Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
             ]),
           ],
@@ -383,9 +398,15 @@ class _MapScreenState extends State<MapScreen> {
         width: 22,
         height: 22,
         decoration: BoxDecoration(
-          color: Brand.slate,
+          // Ink on its page colour: slate/white in light, mist/night in dark,
+          // so "you" stands out on either basemap.
+          color: context.cairn.ink,
           shape: BoxShape.circle,
-          border: Border.all(color: Colors.white, width: 3),
+          border: Border.all(
+              color: Theme.of(context).brightness == Brightness.dark
+                  ? Brand.night
+                  : Colors.white,
+              width: 3),
           boxShadow: const [
             BoxShadow(blurRadius: 4, color: Colors.black38, offset: Offset(0, 1)),
           ],
@@ -434,7 +455,7 @@ class _MapScreenState extends State<MapScreen> {
           // point this at your own tile server instead.
           TileLayer(
             urlTemplate:
-                'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                Brand.basemapUrl(context),
             userAgentPackageName: 'uk.cappylabs.cairn',
             maxNativeZoom: 16,
           ),
@@ -476,11 +497,11 @@ class _MapScreenState extends State<MapScreen> {
                   const SizedBox(height: 8),
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 4),
-                  const Text(
-                    "You can still see contacts below; sharing your own "
+                  Text(
+                    "You can still see your contacts; sharing your own "
                     "location needs permission.",
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Colors.grey, fontSize: 12),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 12),
                   ),
                   const SizedBox(height: 12),
                   FilledButton(
@@ -505,8 +526,8 @@ class _MapScreenState extends State<MapScreen> {
             FloatingActionButton.small(
               heroTag: 'follow',
               tooltip: _follow ? 'Stop following' : 'Follow me',
-              backgroundColor: _follow ? Brand.slate : null,
-              foregroundColor: _follow ? Colors.white : null,
+              backgroundColor: _follow ? Theme.of(context).colorScheme.primary : null,
+              foregroundColor: _follow ? Theme.of(context).colorScheme.onPrimary : null,
               onPressed: _toggleFollow,
               child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
             ),
@@ -557,7 +578,7 @@ class _MapScreenState extends State<MapScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (ctx) => SafeArea(
+      builder: (ctx) => SingleChildScrollView(child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -575,7 +596,7 @@ class _MapScreenState extends State<MapScreen> {
             ),
           ],
         ),
-      ),
+      )),
     );
     if (!mounted) return;
     if (choice == 'place') {
@@ -673,7 +694,7 @@ class _MapScreenState extends State<MapScreen> {
           final pres = Presence.describe(updated: c.updated, now: DateTime.now());
           final precision = rec?.getStringValue('precision') ?? 'precise';
           final keyChanged = rec?.getStringValue('status') == 'key_changed';
-          return SafeArea(
+          return SingleChildScrollView(child: SafeArea(
             child: Padding(
               padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
               child: Column(
@@ -703,7 +724,7 @@ class _MapScreenState extends State<MapScreen> {
                       if (distance != null) _formatDistance(distance),
                       if (c.approximate) 'approximate',
                     ].join(' · '),
-                    style: const TextStyle(color: Brand.stone, fontSize: 13),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
                   const SizedBox(height: 16),
                   if (keyChanged)
@@ -717,8 +738,8 @@ class _MapScreenState extends State<MapScreen> {
                             fontSize: 12),
                       ),
                     ),
-                  const Text('How precisely I share with them',
-                      style: TextStyle(fontSize: 12, color: Brand.stone)),
+                  Text('How precisely I share with them',
+                      style: TextStyle(fontSize: 12, color: context.cairn.muted)),
                   const SizedBox(height: 6),
                   SegmentedButton<String>(
                     segments: const [
@@ -783,7 +804,7 @@ class _MapScreenState extends State<MapScreen> {
                 ],
               ),
             ),
-          );
+          ));
         },
       ),
     );
@@ -799,7 +820,7 @@ class _MapScreenState extends State<MapScreen> {
       context: context,
       showDragHandle: true,
       builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setSheet) => SafeArea(
+        builder: (ctx, setSheet) => SingleChildScrollView(child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
             child: Column(
@@ -855,7 +876,7 @@ class _MapScreenState extends State<MapScreen> {
               ],
             ),
           ),
-        ),
+        )),
       ),
     );
   }

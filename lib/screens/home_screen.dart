@@ -2,7 +2,6 @@ import 'dart:async';
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform, setEquals;
 import 'package:flutter/material.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
 import '../services/pb_client.dart';
 import '../services/auth_service.dart';
@@ -20,14 +19,9 @@ import '../services/foreground_share.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
-import 'places_screen.dart';
-import 'history_screen.dart';
-import 'admin_screen.dart';
-import 'backup_screen.dart';
+import 'settings_screen.dart';
 import '../widgets/background_share_ux.dart';
-import '../widgets/restart_widget.dart';
 import '../widgets/contact_tile.dart';
-import '../widgets/server_settings_dialog.dart';
 import '../theme/brand.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -56,6 +50,10 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
   HomeLayout _layout = HomeLayout.refined;
+  bool _panelOpen = true; // landscape Map first: the floating panel
+  // Wide layout: the people list points the side-by-side map at someone.
+  final _mapFocus = ValueNotifier<String?>(null);
+  static const _wideBreakpoint = 700.0;
   // Background sharing was switched off because its notification was hidden.
   bool _bgHidden = false;
   late final AppLifecycleListener _lifecycle;
@@ -79,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _approxOnly = await Prefs.approxOnly();
     _activityAlerts = await Prefs.activityAlerts();
     _layout = await Prefs.homeLayout();
+    _panelOpen = await Prefs.mapPanelOpen();
     _status = await Prefs.sharedStatus() ?? '';
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
@@ -173,10 +172,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   border: OutlineInputBorder()),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'Shown to your contacts next to your location, end-to-end '
               'encrypted. Clear it any time.',
-              style: TextStyle(color: Brand.stone, fontSize: 12),
+              style: TextStyle(color: context.cairn.muted, fontSize: 12),
             ),
           ],
         ),
@@ -255,6 +254,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _unsub?.call();
     _unsubShares?.call();
     _presenceTimer?.cancel();
+    _mapFocus.dispose();
     _lifecycle.dispose();
     ForegroundShare.instance.error.removeListener(_onShareError);
     ForegroundShare.instance.stop();
@@ -262,58 +262,8 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 
   Future<void> _editName() async {
-    final controller = TextEditingController(text: _myName);
-    final newName = await showDialog<String>(
-      context: context,
-      builder: (context) => AlertDialog(
-        title: const Text('Your display name'),
-        content: TextField(
-          controller: controller,
-          autofocus: true,
-          decoration: const InputDecoration(
-              hintText: 'What should contacts see?',
-              border: OutlineInputBorder()),
-        ),
-        actions: [
-          TextButton(
-              onPressed: () => Navigator.pop(context),
-              child: const Text('Cancel')),
-          FilledButton(
-              onPressed: () => Navigator.pop(context, controller.text.trim()),
-              child: const Text('Save')),
-        ],
-      ),
-    );
-    if (newName != null && newName.isNotEmpty) {
-      await AuthService.setDisplayName(newName);
-      _myName = newName;
-      if (mounted) setState(() {});
-    }
-  }
-
-  Future<void> _about() async {
-    // Read the real version at runtime so it always matches the build (CI sets
-    // it from the git tag / run number) instead of a hardcoded literal.
-    final info = await PackageInfo.fromPlatform();
-    if (!mounted) return;
-    showAboutDialog(
-      context: context,
-      applicationName: 'cairn',
-      applicationVersion: 'Version ${info.version} (${info.buildNumber})',
-      applicationIcon: const CairnMark(size: 40),
-      applicationLegalese: 'Your location, for the few you trust.\n© CappyLabs',
-      children: const [
-        SizedBox(height: 12),
-        Text('Private, self-hosted location sharing. Your location is '
-            'end-to-end encrypted and shared only with the people you pair '
-            'with by QR code.'),
-      ],
-    );
-  }
-
-  Future<void> _serverSettings() async {
-    final changed = await showServerSettingsDialog(context);
-    if (changed && mounted) await RestartWidget.restart(context);
+    final n = await showEditNameDialog(context, _myName);
+    if (n != null && mounted) setState(() => _myName = n);
   }
 
   static Color _presenceColor(PresenceLevel l) => switch (l) {
@@ -324,7 +274,7 @@ class _HomeScreenState extends State<HomeScreen> {
         PresenceLevel.never => Brand.stone,
       };
 
-  Widget _contactTile(RecordModel c) {
+  Widget _contactTile(RecordModel c, {bool focusable = false}) {
     final name = _names[c.id] ?? 'Unnamed device';
     final peerId = c.getStringValue('peer');
     final ctl = ContactPrefsService.resolve(_controls, peerId);
@@ -346,6 +296,12 @@ class _HomeScreenState extends State<HomeScreen> {
       onRename: () => _renameContact(c, name),
       onToggleHistory: () => _toggleContact(peerId, history: !ctl.history),
       onToggleAlerts: () => _toggleContact(peerId, alerts: !ctl.alerts),
+      onTap: focusable
+          ? () {
+              _mapFocus.value = null; // re-tapping the same person re-centres
+              _mapFocus.value = peerId;
+            }
+          : null,
     );
   }
 
@@ -373,10 +329,10 @@ class _HomeScreenState extends State<HomeScreen> {
                   hintText: 'e.g. Mum, Work', border: OutlineInputBorder()),
             ),
             const SizedBox(height: 8),
-            const Text(
+            Text(
               'A private label kept only on this device — they won\'t see it. '
               'Clear it to use the name they chose.',
-              style: TextStyle(color: Brand.stone, fontSize: 12),
+              style: TextStyle(color: context.cairn.muted, fontSize: 12),
             ),
           ],
         ),
@@ -491,10 +447,10 @@ class _HomeScreenState extends State<HomeScreen> {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12),
       child: Material(
-        color: Colors.white,
+        color: context.cairn.card,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(12),
-          side: const BorderSide(color: Brand.pebble),
+          side: BorderSide(color: context.cairn.outline),
         ),
         child: ListTile(
           leading: const Icon(Icons.notifications_off_outlined),
@@ -525,56 +481,6 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  // --- Home layout ----------------------------------------------------------
-
-  static const _layoutInfo = {
-    HomeLayout.refined: (
-      Icons.view_agenda_outlined,
-      'Classic',
-      'Greeting, sharing settings, then your people.'
-    ),
-    HomeLayout.people: (
-      Icons.people_outline,
-      'People first',
-      'Your people fill the screen; sharing settings sit behind one pill.'
-    ),
-    HomeLayout.map: (
-      Icons.map_outlined,
-      'Map first',
-      'The live map is home, with a pull-up panel of people and settings.'
-    ),
-  };
-
-  Future<void> _chooseLayout() async {
-    final picked = await showDialog<HomeLayout>(
-      context: context,
-      builder: (context) => SimpleDialog(
-        title: const Text('Home layout'),
-        children: [
-          RadioGroup<HomeLayout>(
-            groupValue: _layout,
-            onChanged: (v) => Navigator.pop(context, v),
-            child: Column(
-              children: [
-                for (final e in _layoutInfo.entries)
-                  RadioListTile<HomeLayout>(
-                    value: e.key,
-                    secondary: Icon(e.value.$1),
-                    title: Text(e.value.$2),
-                    subtitle: Text(e.value.$3,
-                        style: const TextStyle(fontSize: 12)),
-                  ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-    if (picked == null || picked == _layout) return;
-    await Prefs.setHomeLayout(picked);
-    if (mounted) setState(() => _layout = picked);
-  }
-
   // --- Shared pieces ----------------------------------------------------------
 
   bool get _hasDefaultName => _myName == 'New device';
@@ -590,70 +496,23 @@ class _HomeScreenState extends State<HomeScreen> {
         ],
       );
 
-  Widget _menu() => PopupMenuButton<String>(
-        onSelected: (v) {
-          switch (v) {
-            case 'name':
-              _editName();
-            case 'layout':
-              _chooseLayout();
-            case 'places':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const PlacesScreen()));
-            case 'history':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const HistoryScreen()));
-            case 'backup':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const BackupScreen()));
-            case 'server':
-              _serverSettings();
-            case 'about':
-              _about();
-            case 'admin':
-              Navigator.push(context,
-                  MaterialPageRoute(builder: (_) => const AdminScreen()));
+  /// The gear: everything that isn't about sharing right now lives in Settings.
+  /// Name and layout may change there, so reload them on return.
+  Widget _menu() => IconButton(
+        tooltip: 'Settings',
+        icon: const Icon(Icons.settings_outlined),
+        onPressed: () async {
+          await Navigator.push(context,
+              MaterialPageRoute(builder: (_) => const SettingsScreen()));
+          final name = await AuthService.displayName();
+          final layout = await Prefs.homeLayout();
+          if (mounted) {
+            setState(() {
+              _myName = name;
+              _layout = layout;
+            });
           }
         },
-        itemBuilder: (context) => [
-          const PopupMenuItem(
-              value: 'name',
-              child: ListTile(
-                  leading: Icon(Icons.edit), title: Text('Edit name'))),
-          const PopupMenuItem(
-              value: 'layout',
-              child: ListTile(
-                  leading: Icon(Icons.dashboard_customize_outlined),
-                  title: Text('Home layout'))),
-          const PopupMenuItem(
-              value: 'places',
-              child: ListTile(
-                  leading: Icon(Icons.place_outlined), title: Text('Places'))),
-          const PopupMenuItem(
-              value: 'history',
-              child: ListTile(
-                  leading: Icon(Icons.history),
-                  title: Text('History & trips'))),
-          const PopupMenuItem(
-              value: 'backup',
-              child: ListTile(
-                  leading: Icon(Icons.vpn_key),
-                  title: Text('Backup & restore'))),
-          const PopupMenuItem(
-              value: 'server',
-              child: ListTile(
-                  leading: Icon(Icons.dns), title: Text('Server settings'))),
-          const PopupMenuItem(
-              value: 'about',
-              child: ListTile(
-                  leading: Icon(Icons.info_outline), title: Text('About'))),
-          if (isAdminView)
-            const PopupMenuItem(
-                value: 'admin',
-                child: ListTile(
-                    leading: Icon(Icons.admin_panel_settings),
-                    title: Text('Admin dashboard'))),
-        ],
       );
 
   void _openQr() => Navigator.push(
@@ -668,7 +527,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final choice = await showModalBottomSheet<String>(
       context: context,
       showDragHandle: true,
-      builder: (context) => SafeArea(
+      builder: (context) => SingleChildScrollView(child: SafeArea(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -687,7 +546,7 @@ class _HomeScreenState extends State<HomeScreen> {
             const SizedBox(height: 8),
           ],
         ),
-      ),
+      )),
     );
     if (choice == 'qr') _openQr();
     if (choice == 'scan') await _openScan();
@@ -802,7 +661,7 @@ class _HomeScreenState extends State<HomeScreen> {
         context: context,
         showDragHandle: true,
         builder: (context) => StatefulBuilder(
-          builder: (context, setSheet) => SafeArea(
+          builder: (context, setSheet) => SingleChildScrollView(child: SafeArea(
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -810,39 +669,39 @@ class _HomeScreenState extends State<HomeScreen> {
                 const SizedBox(height: 8),
               ],
             ),
-          ),
+          )),
         ),
       );
 
   Widget _emptyPeople() => Card(
         margin: EdgeInsets.zero,
         elevation: 0,
-        color: Colors.white,
+        color: context.cairn.card,
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
-            side: const BorderSide(color: Brand.pebble)),
+            side: BorderSide(color: context.cairn.outline)),
         child: InkWell(
           borderRadius: BorderRadius.circular(12),
           onTap: _addPerson,
-          child: const Padding(
+          child: Padding(
             padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
             child: Column(
               children: [
-                Icon(Icons.group_add_outlined, size: 32, color: Brand.lichen),
+                Icon(Icons.group_add_outlined, size: 32),
                 SizedBox(height: 8),
                 Text('Add your first person',
                     style: TextStyle(fontWeight: FontWeight.w600)),
                 SizedBox(height: 4),
                 Text('Show them your code, or scan theirs.',
                     textAlign: TextAlign.center,
-                    style: TextStyle(color: Brand.stone)),
+                    style: TextStyle(color: context.cairn.muted)),
               ],
             ),
           ),
         ),
       );
 
-  List<Widget> _people() => [
+  List<Widget> _people({bool focusable = false}) => [
         if (_loading)
           const Padding(
             padding: EdgeInsets.all(24),
@@ -851,7 +710,7 @@ class _HomeScreenState extends State<HomeScreen> {
         else if (_contacts.isEmpty)
           _emptyPeople()
         else
-          ..._contacts.map(_contactTile),
+          ..._contacts.map((c) => _contactTile(c, focusable: focusable)),
       ];
 
   Widget _sectionTitle(String text) => Padding(
@@ -865,12 +724,252 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_bgSupported) _bgHiddenNotice(),
       ];
 
+  /// One-line sharing summary; tap for the settings sheet.
+  Widget _sharingPill() => Material(
+          color: context.cairn.card,
+          shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: _sharingSheet,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                        color: Brand.lichen, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_sharingSummary(),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  Icon(Icons.expand_more),
+                ],
+              ),
+            ),
+          ),
+        );
+
   @override
-  Widget build(BuildContext context) => switch (_layout) {
+  Widget build(BuildContext context) {
+    // Wide screens (landscape phones, tablets, the web) get two panes,
+    // whatever the chosen layout; the picker applies to portrait phones.
+    if (MediaQuery.sizeOf(context).width >= _wideBreakpoint) {
+      return _layout == HomeLayout.map ? _wideMapFirst() : _wide();
+    }
+    return _narrow();
+  }
+
+  Widget _narrow() => switch (_layout) {
         HomeLayout.refined => _refined(),
         HomeLayout.people => _peopleFirst(),
         HomeLayout.map => _mapFirst(),
       };
+
+  /// Map first's controls and people — in the bottom sheet on phones, in a
+  /// floating side panel on wide screens.
+  List<Widget> _mapPanel({bool focusable = false}) => [
+      ..._notices(),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          if (_bgSupported)
+            FilterChip(
+              label: const Text('Background'),
+              selected: _bgEnabled,
+              onSelected: _toggleBg,
+            ),
+          FilterChip(
+            label: const Text('Approximate'),
+            selected: _approxOnly,
+            onSelected: _setApprox,
+          ),
+          FilterChip(
+            label: const Text('Alerts'),
+            selected: _activityAlerts,
+            onSelected: _setActivityAlerts,
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: context.cairn.card,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: context.cairn.outline)),
+        child: _sharingRows().last, // the Status row
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+                _contacts.isEmpty
+                    ? 'People'
+                    : 'People · ${_contacts.length}',
+                style: Theme.of(context).textTheme.titleMedium),
+          ),
+          TextButton.icon(
+            onPressed: _addPerson,
+            icon: const Icon(Icons.person_add_alt_1, size: 18),
+            label: const Text('Add'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      ..._people(focusable: focusable),
+      ];
+
+  /// Logo + settings gear in a small floating pill (Map first).
+  /// With [onLogoTap], the logo becomes a button (landscape: open/close the
+  /// panel) and shows a chevron for the panel's state.
+  Widget _floatingBar({VoidCallback? onLogoTap, bool open = true}) => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Material(
+          color: context.cairn.card,
+          elevation: 2,
+          shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
+          child: Padding(
+            padding: const EdgeInsets.only(right: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                InkWell(
+                  onTap: onLogoTap,
+                  customBorder: const StadiumBorder(),
+                  child: Tooltip(
+                    message: onLogoTap == null
+                        ? ''
+                        : (open ? 'Hide panel' : 'Show panel'),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _brandTitle(),
+                          if (onLogoTap != null)
+                            Icon(open ? Icons.expand_less : Icons.expand_more),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                _menu(),
+              ],
+            ),
+          ),
+        ),
+      );
+
+  /// Map first on a wide screen: full-screen map, the floating bar, and the
+  /// panel floating down the left.
+  Widget _wideMapFirst() {
+    return Scaffold(
+      body: Stack(
+        children: [
+          MapScreen(embedded: true, focus: _mapFocus),
+          SafeArea(
+            child: SizedBox(
+              width: 420, // fits the three chips on one line
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _floatingBar(
+                    open: _panelOpen,
+                    onLogoTap: () {
+                      setState(() => _panelOpen = !_panelOpen);
+                      Prefs.setMapPanelOpen(_panelOpen);
+                    },
+                  ),
+                  const SizedBox(height: 8),
+                  if (_panelOpen)
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 0, 12),
+                      child: Material(
+                        color: context.cairn.sheet,
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(24),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.all(16),
+                          children: _mapPanel(focusable: true),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // --- Wide: people and settings beside a live map ------------------------------
+
+  Widget _wide() {
+    return Scaffold(
+      appBar: AppBar(
+        title: _brandTitle(),
+        actions: [
+          IconButton(
+              tooltip: 'Scan',
+              onPressed: _openScan,
+              icon: const Icon(Icons.qr_code_scanner)),
+          _menu(),
+        ],
+      ),
+      body: Row(
+        children: [
+          SizedBox(
+            width: 360,
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  ..._notices(),
+                  _sharingPill(),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                            _contacts.isEmpty
+                                ? 'People'
+                                : 'People · ${_contacts.length}',
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                      TextButton.icon(
+                        onPressed: _addPerson,
+                        icon: const Icon(Icons.person_add_alt_1, size: 18),
+                        label: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ..._people(focusable: true),
+                ],
+              ),
+            ),
+          ),
+          VerticalDivider(width: 1, color: context.cairn.outline),
+          Expanded(child: MapScreen(embedded: true, focus: _mapFocus)),
+        ],
+      ),
+    );
+  }
 
   // --- Classic: greeting, code/scan, grouped settings, people ----------------
 
@@ -890,8 +989,8 @@ class _HomeScreenState extends State<HomeScreen> {
             Text(_hasDefaultName ? 'Hi 👋' : 'Hi, $_myName 👋',
                 style: Theme.of(context).textTheme.headlineSmall),
             const SizedBox(height: 2),
-            const Text('Your location, for the few you trust.',
-                style: TextStyle(color: Brand.stone)),
+            Text('Your location, for the few you trust.',
+                style: TextStyle(color: context.cairn.muted)),
             if (_hasDefaultName)
               Align(
                 alignment: Alignment.centerLeft,
@@ -927,11 +1026,11 @@ class _HomeScreenState extends State<HomeScreen> {
             Card(
               margin: EdgeInsets.zero,
               elevation: 0,
-              color: Colors.white,
+              color: context.cairn.card,
               clipBehavior: Clip.antiAlias,
               shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
-                  side: const BorderSide(color: Brand.pebble)),
+                  side: BorderSide(color: context.cairn.outline)),
               child: _divided(_sharingRows()),
             ),
             const SizedBox(height: 24),
@@ -987,34 +1086,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             ..._notices(),
-            Material(
-              color: Colors.white,
-              shape: const StadiumBorder(side: BorderSide(color: Brand.pebble)),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: _sharingSheet,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                            color: Brand.lichen, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_sharingSummary(),
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      const Icon(Icons.expand_more, color: Brand.stone),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _sharingPill(),
             const SizedBox(height: 20),
             _sectionTitle(_contacts.isEmpty
                 ? 'People'
@@ -1029,24 +1101,30 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- Map first: live map with a pull-up panel ------------------------------
 
   Widget _mapFirst() {
+    // No full-width app bar: the map runs to the top of the screen, with a
+    // compact floating bar (logo + settings) at the top-left.
     return Scaffold(
-      appBar: AppBar(title: _brandTitle(), actions: [_menu()]),
       body: LayoutBuilder(
         builder: (context, box) {
           const peek = 0.34;
           return Stack(
             children: [
               MapScreen(embedded: true, bottomInset: box.maxHeight * peek),
+              SafeArea(child: _floatingBar()),
               DraggableScrollableSheet(
                 initialChildSize: peek,
                 minChildSize: 0.14,
                 maxChildSize: 0.9,
                 snap: true,
-                builder: (context, scroll) => Material(
-                  color: Brand.mist,
+                // Floats like the top bar: inset from the edges, fully rounded.
+                builder: (context, scroll) => SafeArea(
+                  top: false,
+                  child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: Material(
+                  color: context.cairn.sheet,
                   elevation: 8,
-                  borderRadius:
-                      const BorderRadius.vertical(top: Radius.circular(20)),
+                  borderRadius: BorderRadius.circular(24),
                   clipBehavior: Clip.antiAlias,
                   child: ListView(
                     controller: scroll,
@@ -1058,64 +1136,14 @@ class _HomeScreenState extends State<HomeScreen> {
                           width: 36,
                           height: 4,
                           decoration: BoxDecoration(
-                              color: Brand.pebble,
+                              color: context.cairn.outline,
                               borderRadius: BorderRadius.circular(2)),
                         ),
                       ),
-                      ..._notices(),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          if (_bgSupported)
-                            FilterChip(
-                              label: const Text('Background'),
-                              selected: _bgEnabled,
-                              onSelected: _toggleBg,
-                            ),
-                          FilterChip(
-                            label: const Text('Approximate'),
-                            selected: _approxOnly,
-                            onSelected: _setApprox,
-                          ),
-                          FilterChip(
-                            label: const Text('Alerts'),
-                            selected: _activityAlerts,
-                            onSelected: _setActivityAlerts,
-                          ),
-                          ActionChip(
-                            avatar: Icon(
-                                _status.isEmpty
-                                    ? Icons.add
-                                    : Icons.label_outline,
-                                size: 18),
-                            label: Text(_status.isEmpty ? 'Status' : _status),
-                            onPressed: _editStatus,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                                _contacts.isEmpty
-                                    ? 'People'
-                                    : 'People · ${_contacts.length}',
-                                style: Theme.of(context).textTheme.titleMedium),
-                          ),
-                          TextButton.icon(
-                            onPressed: _addPerson,
-                            icon: const Icon(Icons.person_add_alt_1, size: 18),
-                            label: const Text('Add'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ..._people(),
+                      ..._mapPanel(),
                     ],
                   ),
-                ),
+                ))),
               ),
             ],
           );

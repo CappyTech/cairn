@@ -81,7 +81,7 @@ class _UpdateGateState extends State<UpdateGate> {
     _bannerShown = true;
     ScaffoldMessenger.of(context).showMaterialBanner(
       MaterialBanner(
-        leading: const Icon(Icons.system_update_outlined, color: Brand.slate),
+        leading: Icon(Icons.system_update_outlined, color: context.cairn.ink),
         content: const Text('A new version of Cairn is available.'),
         actions: [
           TextButton(
@@ -189,7 +189,7 @@ class _UpdateRequired extends StatelessWidget {
                   "longer supported, so it can't share with your contacts. "
                   'Update to the latest version to carry on.',
                   textAlign: TextAlign.center,
-                  style: const TextStyle(color: Brand.stone),
+                  style: TextStyle(color: context.cairn.muted),
                 ),
                 const SizedBox(height: 24),
                 FilledButton.icon(

@@ -135,12 +135,12 @@ class _BackupScreenState extends State<BackupScreen> {
                         style: TextStyle(fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'These 24 words ARE your identity. Write them down and keep '
                     'them somewhere safe and private. Anyone with them can '
                     'become you; without them, a lost or wiped phone means a '
                     'lost identity.',
-                    style: TextStyle(color: Brand.stone, fontSize: 13),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   if (_words == null)
@@ -153,9 +153,9 @@ class _BackupScreenState extends State<BackupScreen> {
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
-                        color: Brand.mist,
+                        color: context.cairn.sheet,
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Brand.pebble),
+                        border: Border.all(color: context.cairn.outline),
                       ),
                       child: Wrap(
                         spacing: 8,
@@ -201,10 +201,10 @@ class _BackupScreenState extends State<BackupScreen> {
                         style: TextStyle(fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Moving to a new phone? Paste your 24-word phrase to bring '
                     'your identity (and contacts) back.',
-                    style: TextStyle(color: Brand.stone, fontSize: 13),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   TextField(
@@ -253,10 +253,10 @@ class _BackupScreenState extends State<BackupScreen> {
                         style: TextStyle(fontWeight: FontWeight.w600)),
                   ]),
                   const SizedBox(height: 8),
-                  const Text(
+                  Text(
                     'Delete this identity and remove yourself from everyone. '
                     'Irreversible without your recovery phrase.',
-                    style: TextStyle(color: Brand.stone, fontSize: 13),
+                    style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
                   const SizedBox(height: 12),
                   OutlinedButton.icon(

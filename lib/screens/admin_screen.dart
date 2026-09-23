@@ -217,7 +217,7 @@ class _AdminScreenState extends State<AdminScreen> {
         spacing: 10,
         runSpacing: 10,
         children: [
-          _stat('Devices', '${d.users.length}', Icons.smartphone, Brand.slate),
+          _stat('Devices', '${d.users.length}', Icons.smartphone, context.cairn.ink),
           _stat('Active now', '$activeNow', Icons.bolt, Colors.green),
           _stat('Connections', '${d.contacts.length}', Icons.link, Colors.teal),
           _stat('Shares', '${d.shares.length}', Icons.lock, Colors.deepPurple),
@@ -240,12 +240,12 @@ class _AdminScreenState extends State<AdminScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Icon(icon, color: color, size: 20),
+          Icon(icon, color: context.cairn.ink, size: 20),
           const SizedBox(height: 6),
           Text(value,
               style:
                   const TextStyle(fontSize: 22, fontWeight: FontWeight.bold)),
-          Text(label, style: const TextStyle(color: Colors.grey, fontSize: 12)),
+          Text(label, style: TextStyle(color: context.cairn.muted, fontSize: 12)),
         ],
       ),
     );
@@ -253,7 +253,7 @@ class _AdminScreenState extends State<AdminScreen> {
 
   // --- tabs -----------------------------------------------------------------
   Widget _empty(String msg) =>
-      Center(child: Text(msg, style: const TextStyle(color: Colors.grey)));
+      Center(child: Text(msg, style: TextStyle(color: context.cairn.muted)));
 
   Widget _devices(AdminSnapshot d) {
     if (d.users.isEmpty) return _empty('No devices yet.');
@@ -274,7 +274,7 @@ class _AdminScreenState extends State<AdminScreen> {
           trailing: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Icon(Icons.circle, size: 12, color: color),
+              Icon(Icons.circle, size: 12, color: context.cairn.ink),
               Text(label, style: TextStyle(color: color, fontSize: 11)),
             ],
           ),
@@ -324,12 +324,12 @@ class _AdminScreenState extends State<AdminScreen> {
                   s.getStringValue('recipient');
               final bytes = s.getStringValue('ciphertext').length;
               return ListTile(
-                leading: const Icon(Icons.lock, color: Colors.deepPurple),
+                leading: const Icon(Icons.lock),
                 title: Text('$sender  →  $recip'),
                 subtitle: Text('🔒 encrypted · $bytes bytes',
                     style: const TextStyle(fontSize: 12)),
                 trailing: Text(_ago(s.getStringValue('updated')),
-                    style: const TextStyle(fontSize: 11, color: Colors.grey)),
+                    style: TextStyle(fontSize: 11, color: context.cairn.muted)),
               );
             }).toList(),
           ),
@@ -347,7 +347,7 @@ class _AdminScreenState extends State<AdminScreen> {
             names[p.getStringValue('target')] ?? p.getStringValue('target');
         final from = names[p.getStringValue('from')] ?? p.getStringValue('from');
         return ListTile(
-          leading: const Icon(Icons.hourglass_bottom, color: Colors.orange),
+          leading: const Icon(Icons.hourglass_bottom),
           title: Text('$from  →  $target'),
           subtitle: const Text('waiting for the target device to reciprocate',
               style: TextStyle(fontSize: 12)),

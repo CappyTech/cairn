@@ -123,13 +123,13 @@ class _PlacesScreenState extends State<PlacesScreen> {
                   child: ListView(
                     padding: const EdgeInsets.all(12),
                     children: [
-                      const Padding(
+                      Padding(
                         padding: EdgeInsets.fromLTRB(4, 4, 4, 12),
                         child: Text(
                           'Get an alert when a contact arrives at or leaves a '
                           'place. Places stay end-to-end encrypted — only you '
                           'can see them.',
-                          style: TextStyle(color: Brand.stone, fontSize: 13),
+                          style: TextStyle(color: context.cairn.muted, fontSize: 13),
                         ),
                       ),
                       ..._places.map(_tile),
@@ -145,13 +145,13 @@ class _PlacesScreenState extends State<PlacesScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              const Icon(Icons.place_outlined, size: 48, color: Brand.stone),
+              Icon(Icons.place_outlined, size: 48),
               const SizedBox(height: 12),
-              const Text(
+              Text(
                 'No places yet.\nAdd Home or Work to get arrive/leave alerts '
                 'for your contacts.',
                 textAlign: TextAlign.center,
-                style: TextStyle(color: Brand.stone),
+                style: TextStyle(color: context.cairn.muted),
               ),
               const SizedBox(height: 16),
               FilledButton.icon(
@@ -168,8 +168,8 @@ class _PlacesScreenState extends State<PlacesScreen> {
         margin: const EdgeInsets.only(bottom: 8),
         child: ListTile(
           leading: CircleAvatar(
-            backgroundColor: Brand.lichen.withValues(alpha: 0.20),
-            child: const Icon(Icons.place, color: Brand.slate),
+            backgroundColor: context.cairn.outline,
+            child: Icon(Icons.place, color: context.cairn.ink),
           ),
           title: Text(p.name),
           subtitle: Text(
@@ -339,7 +339,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   children: [
                     TileLayer(
                       urlTemplate:
-                          'https://services.arcgisonline.com/ArcGIS/rest/services/Canvas/World_Light_Gray_Base/MapServer/tile/{z}/{y}/{x}',
+                          Brand.basemapUrl(context),
                       userAgentPackageName: 'uk.cappylabs.cairn',
                       maxNativeZoom: 16,
                     ),
@@ -356,12 +356,12 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   ],
                 ),
                 // Fixed centre pin (sits above the map, marks the chosen point).
-                const IgnorePointer(
+                IgnorePointer(
                   child: Padding(
                     padding: EdgeInsets.only(bottom: 34),
                     child: Icon(Icons.place,
                         size: 40,
-                        color: Brand.slate,
+                        color: context.cairn.ink,
                         shadows: [
                           Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1))
                         ]),
@@ -399,7 +399,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      const Icon(Icons.social_distance, size: 20, color: Brand.stone),
+                      Icon(Icons.social_distance, size: 20),
                       const SizedBox(width: 8),
                       Text('Radius: ${_radius.round()} m',
                           style: const TextStyle(fontWeight: FontWeight.w500)),

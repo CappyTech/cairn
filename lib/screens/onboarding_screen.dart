@@ -234,9 +234,9 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
             style: Theme.of(context).textTheme.displaySmall?.copyWith(
                 fontWeight: FontWeight.w600, letterSpacing: -1)),
         const SizedBox(height: 8),
-        const Text('Your location, for the few you trust.',
+        Text('Your location, for the few you trust.',
             textAlign: TextAlign.center,
-            style: TextStyle(color: Brand.stone, fontSize: 16)),
+            style: TextStyle(color: context.cairn.muted, fontSize: 16)),
         const Spacer(),
         FilledButton(
           onPressed: () => _go(_Step.privacy),
@@ -261,7 +261,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: Brand.lichen),
+              Icon(icon),
               const SizedBox(width: 12),
               Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
             ],
@@ -422,13 +422,13 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 24),
-                Icon(icon, size: 40, color: Brand.lichen),
+                Icon(icon, size: 40),
                 const SizedBox(height: 16),
                 Text(title, style: Theme.of(context).textTheme.headlineSmall),
                 if (body != null) ...[
                   const SizedBox(height: 8),
                   Text(body,
-                      style: const TextStyle(color: Brand.stone, fontSize: 15)),
+                      style: TextStyle(color: context.cairn.muted, fontSize: 15)),
                 ],
                 if (content != null) ...[
                   const SizedBox(height: 24),
@@ -454,8 +454,8 @@ class _Spinner extends StatelessWidget {
   const _Spinner();
 
   @override
-  Widget build(BuildContext context) => const SizedBox(
+  Widget build(BuildContext context) => SizedBox(
       width: 18,
       height: 18,
-      child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white));
+      child: CircularProgressIndicator(strokeWidth: 2, color: Theme.of(context).colorScheme.onPrimary));
 }

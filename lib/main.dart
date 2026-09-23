@@ -34,6 +34,8 @@ class MyApp extends StatelessWidget {
       title: 'Cairn',
       debugShowCheckedModeBanner: false,
       theme: Brand.theme(),
+      darkTheme: Brand.darkTheme(),
+      themeMode: ThemeMode.system,
       home: const AuthGate(),
     );
   }
@@ -129,7 +131,7 @@ class _AuthGateState extends State<AuthGate> {
                             : 'Check the server is running and the address in '
                                 'Settings is correct.\n\n${snapshot.error}',
                         textAlign: TextAlign.center,
-                        style: const TextStyle(color: Colors.grey, fontSize: 12)),
+                        style: TextStyle(color: context.cairn.muted, fontSize: 12)),
                     const SizedBox(height: 16),
                     Wrap(
                       spacing: 8,

@@ -99,7 +99,7 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
   Widget _empty(String t) => Padding(
         padding: const EdgeInsets.all(12),
         child: Text(t,
-            style: const TextStyle(color: Brand.stone, fontSize: 13)),
+            style: TextStyle(color: context.cairn.muted, fontSize: 13)),
       );
 
   Widget _mineTile(SharedPin p) {
@@ -107,9 +107,9 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
     return Card(
       margin: const EdgeInsets.only(bottom: 8),
       child: ListTile(
-        leading: const CircleAvatar(
+        leading: CircleAvatar(
           backgroundColor: Color(0x228FA35D),
-          child: Icon(Icons.push_pin, color: Brand.slate),
+          child: Icon(Icons.push_pin, color: context.cairn.ink),
         ),
         title: Text(p.name),
         subtitle: Text('Shared with $n contact${n == 1 ? '' : 's'}'),
@@ -124,9 +124,9 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
   Widget _withMeTile(SharedPin p) => Card(
         margin: const EdgeInsets.only(bottom: 8),
         child: ListTile(
-          leading: const CircleAvatar(
+          leading: CircleAvatar(
             backgroundColor: Color(0x228FA35D),
-            child: Icon(Icons.push_pin, color: Brand.slate),
+            child: Icon(Icons.push_pin, color: context.cairn.ink),
           ),
           title: Text(p.name),
           subtitle: Text(

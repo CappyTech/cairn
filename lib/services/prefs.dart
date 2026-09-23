@@ -34,6 +34,13 @@ class Prefs {
   static Future<void> setHomeLayout(HomeLayout v) async =>
       _s.write(key: 'home_layout', value: v.name);
 
+  /// Landscape Map first: whether the floating panel is open (default yes).
+  static Future<bool> mapPanelOpen() async =>
+      (await _s.read(key: 'map_panel_open')) != '0';
+
+  static Future<void> setMapPanelOpen(bool v) async =>
+      _s.write(key: 'map_panel_open', value: v ? '1' : '0');
+
   /// Global privacy master-switch: when on, EVERY contact receives only
   /// approximate (rounded) location, regardless of their per-contact setting.
   static Future<bool> approxOnly() async =>
