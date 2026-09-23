@@ -1,10 +1,11 @@
-Cairn v0.0.6 — private, end-to-end encrypted location sharing.
+Cairn v0.0.15 — private, end-to-end encrypted location sharing.
 
-New in this update:
-• Clearer background sharing: a plain-language explainer before any permission, plus guided "Allow all the time" setup.
-• The "sharing is on" notification now shows reliably.
-• The map opens faster and centres on you with your people in view.
+New since v0.0.6:
+• History: a timeline of where you stopped and travelled; save a stop as a place.
+• Places & arrival/leave alerts.
+• Shared pins and a "where I am" label for your contacts.
+• Interactive map: tap people, long-press to add a place or pin, follow mode.
+• Nicknames, last-seen and per-contact controls.
+• Faster map and battery-aware sharing.
 
-Reminders: no-login identity, per-contact precision, 24-word recovery phrase, QR pairing. Location and names stay end-to-end encrypted.
-
-iOS not available yet.
+All end-to-end encrypted. iOS not available yet.
