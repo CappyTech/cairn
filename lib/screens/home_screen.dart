@@ -756,7 +756,9 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget build(BuildContext context) {
     // Wide screens (landscape phones, tablets, the web) get two panes,
     // whatever the chosen layout; the picker applies to portrait phones.
-    if (MediaQuery.sizeOf(context).width >= _wideBreakpoint) return _wide();
+    if (MediaQuery.sizeOf(context).width >= _wideBreakpoint) {
+      return _layout == HomeLayout.map ? _wideMapFirst() : _wide();
+    }
     return _narrow();
   }
 
@@ -765,6 +767,121 @@ class _HomeScreenState extends State<HomeScreen> {
         HomeLayout.people => _peopleFirst(),
         HomeLayout.map => _mapFirst(),
       };
+
+  /// Map first's controls and people — in the bottom sheet on phones, in a
+  /// floating side panel on wide screens.
+  List<Widget> _mapPanel({bool focusable = false}) => [
+      ..._notices(),
+      Wrap(
+        spacing: 8,
+        runSpacing: 4,
+        children: [
+          if (_bgSupported)
+            FilterChip(
+              label: const Text('Background'),
+              selected: _bgEnabled,
+              onSelected: _toggleBg,
+            ),
+          FilterChip(
+            label: const Text('Approximate'),
+            selected: _approxOnly,
+            onSelected: _setApprox,
+          ),
+          FilterChip(
+            label: const Text('Alerts'),
+            selected: _activityAlerts,
+            onSelected: _setActivityAlerts,
+          ),
+        ],
+      ),
+      const SizedBox(height: 8),
+      Card(
+        margin: EdgeInsets.zero,
+        elevation: 0,
+        color: context.cairn.card,
+        clipBehavior: Clip.antiAlias,
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+            side: BorderSide(color: context.cairn.outline)),
+        child: _sharingRows().last, // the Status row
+      ),
+      const SizedBox(height: 12),
+      Row(
+        children: [
+          Expanded(
+            child: Text(
+                _contacts.isEmpty
+                    ? 'People'
+                    : 'People · ${_contacts.length}',
+                style: Theme.of(context).textTheme.titleMedium),
+          ),
+          TextButton.icon(
+            onPressed: _addPerson,
+            icon: const Icon(Icons.person_add_alt_1, size: 18),
+            label: const Text('Add'),
+          ),
+        ],
+      ),
+      const SizedBox(height: 4),
+      ..._people(focusable: focusable),
+      ];
+
+  /// Logo + settings gear in a small floating pill (Map first).
+  Widget _floatingBar() => Padding(
+        padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+        child: Material(
+          color: context.cairn.card,
+          elevation: 2,
+          shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
+          child: Padding(
+            padding: const EdgeInsets.only(left: 14, right: 2),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [_brandTitle(), const SizedBox(width: 6), _menu()],
+            ),
+          ),
+        ),
+      );
+
+  /// Map first on a wide screen: full-screen map, the floating bar, and the
+  /// panel floating down the left.
+  Widget _wideMapFirst() {
+    return Scaffold(
+      body: Stack(
+        children: [
+          MapScreen(embedded: true, focus: _mapFocus),
+          SafeArea(
+            child: SizedBox(
+              width: 420, // fits the three chips on one line
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _floatingBar(),
+                  const SizedBox(height: 8),
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 0, 12),
+                      child: Material(
+                        color: context.cairn.sheet,
+                        elevation: 8,
+                        borderRadius: BorderRadius.circular(24),
+                        clipBehavior: Clip.antiAlias,
+                        child: ListView(
+                          shrinkWrap: true,
+                          padding: const EdgeInsets.all(16),
+                          children: _mapPanel(focusable: true),
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
 
   // --- Wide: people and settings beside a live map ------------------------------
 
@@ -960,24 +1077,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return Stack(
             children: [
               MapScreen(embedded: true, bottomInset: box.maxHeight * peek),
-              SafeArea(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
-                  child: Material(
-                    color: context.cairn.card,
-                    elevation: 2,
-                    shape: StadiumBorder(
-                        side: BorderSide(color: context.cairn.outline)),
-                    child: Padding(
-                      padding: const EdgeInsets.only(left: 14, right: 2),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: [_brandTitle(), const SizedBox(width: 6), _menu()],
-                      ),
-                    ),
-                  ),
-                ),
-              ),
+              SafeArea(child: _floatingBar()),
               DraggableScrollableSheet(
                 initialChildSize: peek,
                 minChildSize: 0.14,
@@ -1007,59 +1107,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(2)),
                         ),
                       ),
-                      ..._notices(),
-                      Wrap(
-                        spacing: 8,
-                        runSpacing: 4,
-                        children: [
-                          if (_bgSupported)
-                            FilterChip(
-                              label: const Text('Background'),
-                              selected: _bgEnabled,
-                              onSelected: _toggleBg,
-                            ),
-                          FilterChip(
-                            label: const Text('Approximate'),
-                            selected: _approxOnly,
-                            onSelected: _setApprox,
-                          ),
-                          FilterChip(
-                            label: const Text('Alerts'),
-                            selected: _activityAlerts,
-                            onSelected: _setActivityAlerts,
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 8),
-                      Card(
-                        margin: EdgeInsets.zero,
-                        elevation: 0,
-                        color: context.cairn.card,
-                        clipBehavior: Clip.antiAlias,
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            side: BorderSide(color: context.cairn.outline)),
-                        child: _sharingRows().last, // the Status row
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Expanded(
-                            child: Text(
-                                _contacts.isEmpty
-                                    ? 'People'
-                                    : 'People · ${_contacts.length}',
-                                style: Theme.of(context).textTheme.titleMedium),
-                          ),
-                          TextButton.icon(
-                            onPressed: _addPerson,
-                            icon: const Icon(Icons.person_add_alt_1, size: 18),
-                            label: const Text('Add'),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 4),
-                      ..._people(),
+                      ..._mapPanel(),
                     ],
                   ),
                 ))),
