@@ -77,6 +77,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _approxOnly = await Prefs.approxOnly();
     _activityAlerts = await Prefs.activityAlerts();
     _layout = await Prefs.homeLayout();
+    _panelOpen = await Prefs.mapPanelOpen();
     _status = await Prefs.sharedStatus() ?? '';
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
@@ -883,7 +884,10 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   _floatingBar(
                     open: _panelOpen,
-                    onLogoTap: () => setState(() => _panelOpen = !_panelOpen),
+                    onLogoTap: () {
+                      setState(() => _panelOpen = !_panelOpen);
+                      Prefs.setMapPanelOpen(_panelOpen);
+                    },
                   ),
                   const SizedBox(height: 8),
                   if (_panelOpen)
