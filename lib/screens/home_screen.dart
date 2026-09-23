@@ -56,6 +56,9 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
   HomeLayout _layout = HomeLayout.refined;
+  // Wide layout: the people list points the side-by-side map at someone.
+  final _mapFocus = ValueNotifier<String?>(null);
+  static const _wideBreakpoint = 700.0;
   // Background sharing was switched off because its notification was hidden.
   bool _bgHidden = false;
   late final AppLifecycleListener _lifecycle;
@@ -255,6 +258,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _unsub?.call();
     _unsubShares?.call();
     _presenceTimer?.cancel();
+    _mapFocus.dispose();
     _lifecycle.dispose();
     ForegroundShare.instance.error.removeListener(_onShareError);
     ForegroundShare.instance.stop();
@@ -324,7 +328,7 @@ class _HomeScreenState extends State<HomeScreen> {
         PresenceLevel.never => Brand.stone,
       };
 
-  Widget _contactTile(RecordModel c) {
+  Widget _contactTile(RecordModel c, {bool focusable = false}) {
     final name = _names[c.id] ?? 'Unnamed device';
     final peerId = c.getStringValue('peer');
     final ctl = ContactPrefsService.resolve(_controls, peerId);
@@ -346,6 +350,12 @@ class _HomeScreenState extends State<HomeScreen> {
       onRename: () => _renameContact(c, name),
       onToggleHistory: () => _toggleContact(peerId, history: !ctl.history),
       onToggleAlerts: () => _toggleContact(peerId, alerts: !ctl.alerts),
+      onTap: focusable
+          ? () {
+              _mapFocus.value = null; // re-tapping the same person re-centres
+              _mapFocus.value = peerId;
+            }
+          : null,
     );
   }
 
@@ -842,7 +852,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       );
 
-  List<Widget> _people() => [
+  List<Widget> _people({bool focusable = false}) => [
         if (_loading)
           const Padding(
             padding: EdgeInsets.all(24),
@@ -851,7 +861,7 @@ class _HomeScreenState extends State<HomeScreen> {
         else if (_contacts.isEmpty)
           _emptyPeople()
         else
-          ..._contacts.map(_contactTile),
+          ..._contacts.map((c) => _contactTile(c, focusable: focusable)),
       ];
 
   Widget _sectionTitle(String text) => Padding(
@@ -865,12 +875,104 @@ class _HomeScreenState extends State<HomeScreen> {
         if (_bgSupported) _bgHiddenNotice(),
       ];
 
+  /// One-line sharing summary; tap for the settings sheet.
+  Widget _sharingPill() => Material(
+          color: context.cairn.card,
+          shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
+          child: InkWell(
+            customBorder: const StadiumBorder(),
+            onTap: _sharingSheet,
+            child: Padding(
+              padding:
+                  const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+              child: Row(
+                children: [
+                  Container(
+                    width: 8,
+                    height: 8,
+                    decoration: const BoxDecoration(
+                        color: Brand.lichen, shape: BoxShape.circle),
+                  ),
+                  const SizedBox(width: 10),
+                  Expanded(
+                    child: Text(_sharingSummary(),
+                        overflow: TextOverflow.ellipsis),
+                  ),
+                  Icon(Icons.expand_more, color: context.cairn.muted),
+                ],
+              ),
+            ),
+          ),
+        );
+
   @override
-  Widget build(BuildContext context) => switch (_layout) {
+  Widget build(BuildContext context) {
+    // Wide screens (landscape phones, tablets, the web) get two panes,
+    // whatever the chosen layout; the picker applies to portrait phones.
+    if (MediaQuery.sizeOf(context).width >= _wideBreakpoint) return _wide();
+    return _narrow();
+  }
+
+  Widget _narrow() => switch (_layout) {
         HomeLayout.refined => _refined(),
         HomeLayout.people => _peopleFirst(),
         HomeLayout.map => _mapFirst(),
       };
+
+  // --- Wide: people and settings beside a live map ------------------------------
+
+  Widget _wide() {
+    return Scaffold(
+      appBar: AppBar(
+        title: _brandTitle(),
+        actions: [
+          IconButton(
+              tooltip: 'Scan',
+              onPressed: _openScan,
+              icon: const Icon(Icons.qr_code_scanner)),
+          _menu(),
+        ],
+      ),
+      body: Row(
+        children: [
+          SizedBox(
+            width: 360,
+            child: RefreshIndicator(
+              onRefresh: _refresh,
+              child: ListView(
+                padding: const EdgeInsets.all(16),
+                children: [
+                  ..._notices(),
+                  _sharingPill(),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: Text(
+                            _contacts.isEmpty
+                                ? 'People'
+                                : 'People · ${_contacts.length}',
+                            style: Theme.of(context).textTheme.titleMedium),
+                      ),
+                      TextButton.icon(
+                        onPressed: _addPerson,
+                        icon: const Icon(Icons.person_add_alt_1, size: 18),
+                        label: const Text('Add'),
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 4),
+                  ..._people(focusable: true),
+                ],
+              ),
+            ),
+          ),
+          VerticalDivider(width: 1, color: context.cairn.outline),
+          Expanded(child: MapScreen(embedded: true, focus: _mapFocus)),
+        ],
+      ),
+    );
+  }
 
   // --- Classic: greeting, code/scan, grouped settings, people ----------------
 
@@ -987,34 +1089,7 @@ class _HomeScreenState extends State<HomeScreen> {
           padding: const EdgeInsets.all(16),
           children: [
             ..._notices(),
-            Material(
-              color: context.cairn.card,
-              shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
-              child: InkWell(
-                customBorder: const StadiumBorder(),
-                onTap: _sharingSheet,
-                child: Padding(
-                  padding:
-                      const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  child: Row(
-                    children: [
-                      Container(
-                        width: 8,
-                        height: 8,
-                        decoration: const BoxDecoration(
-                            color: Brand.lichen, shape: BoxShape.circle),
-                      ),
-                      const SizedBox(width: 10),
-                      Expanded(
-                        child: Text(_sharingSummary(),
-                            overflow: TextOverflow.ellipsis),
-                      ),
-                      Icon(Icons.expand_more, color: context.cairn.muted),
-                    ],
-                  ),
-                ),
-              ),
-            ),
+            _sharingPill(),
             const SizedBox(height: 20),
             _sectionTitle(_contacts.isEmpty
                 ? 'People'

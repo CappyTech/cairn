@@ -38,6 +38,9 @@ class ContactTile extends StatelessWidget {
   final VoidCallback? onToggleHistory;
   final VoidCallback? onToggleAlerts;
 
+  /// Tapping the row (e.g. to centre the map on them). Null = not tappable.
+  final VoidCallback? onTap;
+
   const ContactTile({
     super.key,
     required this.name,
@@ -54,6 +57,7 @@ class ContactTile extends StatelessWidget {
     this.presenceColor,
     this.onToggleHistory,
     this.onToggleAlerts,
+    this.onTap,
   });
 
   static String precLabel(String p) => switch (p) {
@@ -76,6 +80,7 @@ class ContactTile extends StatelessWidget {
     final paused = precision == 'off';
     return Card(
       child: ListTile(
+        onTap: onTap,
         leading: CircleAvatar(child: Text(initial(name))),
         title: Text(name),
         subtitle: Text(

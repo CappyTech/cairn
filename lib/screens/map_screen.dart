@@ -33,7 +33,12 @@ class MapScreen extends StatefulWidget {
   /// the buttons clear of whatever overlaps the map's bottom edge.
   final bool embedded;
   final double bottomInset;
-  const MapScreen({super.key, this.embedded = false, this.bottomInset = 0});
+
+  /// Set to a contact's peer id to centre the map on them (the wide Home
+  /// layout's people list drives this).
+  final ValueNotifier<String?>? focus;
+  const MapScreen(
+      {super.key, this.embedded = false, this.bottomInset = 0, this.focus});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -90,6 +95,7 @@ class _MapScreenState extends State<MapScreen> {
     }
     _share.position.addListener(_onPosition);
     _share.error.addListener(_onShareError);
+    widget.focus?.addListener(_onFocus);
 
     // Staleness is time-based, so re-evaluate on a timer (not just on
     // incoming shares) to catch a contact who simply stopped sharing — and
@@ -133,6 +139,14 @@ class _MapScreenState extends State<MapScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Centre on the contact named by [MapScreen.focus], if they're sharing.
+  void _onFocus() {
+    final c = _contacts[widget.focus?.value];
+    if (c == null || !mounted) return;
+    setState(() => _follow = false);
+    _map.move(LatLng(c.lat, c.lng), math.max(_map.camera.zoom, 15));
+  }
+
   /// Fire a one-off local notification when a contact crosses into "stale"
   /// (stopped sharing for a while), and re-arm once they're fresh again. The
   /// edge-trigger state is the shared, persisted [StaleAlertStore] — the same
@@ -165,6 +179,7 @@ class _MapScreenState extends State<MapScreen> {
   void dispose() {
     _share.position.removeListener(_onPosition);
     _share.error.removeListener(_onShareError);
+    widget.focus?.removeListener(_onFocus);
     _staleTimer?.cancel();
     _unsub?.call();
     super.dispose();
@@ -483,7 +498,7 @@ class _MapScreenState extends State<MapScreen> {
                   Text(_error!, textAlign: TextAlign.center),
                   const SizedBox(height: 4),
                   Text(
-                    "You can still see contacts below; sharing your own "
+                    "You can still see your contacts; sharing your own "
                     "location needs permission.",
                     textAlign: TextAlign.center,
                     style: TextStyle(color: context.cairn.muted, fontSize: 12),
