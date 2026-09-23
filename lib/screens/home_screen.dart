@@ -50,6 +50,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
   HomeLayout _layout = HomeLayout.refined;
+  bool _panelOpen = true; // landscape Map first: the floating panel
   // Wide layout: the people list points the side-by-side map at someone.
   final _mapFocus = ValueNotifier<String?>(null);
   static const _wideBreakpoint = 700.0;
@@ -827,17 +828,41 @@ class _HomeScreenState extends State<HomeScreen> {
       ];
 
   /// Logo + settings gear in a small floating pill (Map first).
-  Widget _floatingBar() => Padding(
+  /// With [onLogoTap], the logo becomes a button (landscape: open/close the
+  /// panel) and shows a chevron for the panel's state.
+  Widget _floatingBar({VoidCallback? onLogoTap, bool open = true}) => Padding(
         padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
         child: Material(
           color: context.cairn.card,
           elevation: 2,
           shape: StadiumBorder(side: BorderSide(color: context.cairn.outline)),
           child: Padding(
-            padding: const EdgeInsets.only(left: 14, right: 2),
+            padding: const EdgeInsets.only(right: 2),
             child: Row(
               mainAxisSize: MainAxisSize.min,
-              children: [_brandTitle(), const SizedBox(width: 6), _menu()],
+              children: [
+                InkWell(
+                  onTap: onLogoTap,
+                  customBorder: const StadiumBorder(),
+                  child: Tooltip(
+                    message: onLogoTap == null
+                        ? ''
+                        : (open ? 'Hide panel' : 'Show panel'),
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(14, 8, 6, 8),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          _brandTitle(),
+                          if (onLogoTap != null)
+                            Icon(open ? Icons.expand_less : Icons.expand_more),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                _menu(),
+              ],
             ),
           ),
         ),
@@ -856,8 +881,12 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  _floatingBar(),
+                  _floatingBar(
+                    open: _panelOpen,
+                    onLogoTap: () => setState(() => _panelOpen = !_panelOpen),
+                  ),
                   const SizedBox(height: 8),
+                  if (_panelOpen)
                   Flexible(
                     child: Padding(
                       padding: const EdgeInsets.fromLTRB(12, 0, 0, 12),
