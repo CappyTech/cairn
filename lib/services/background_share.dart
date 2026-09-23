@@ -72,9 +72,14 @@ class BackgroundShare {
       ),
     );
 
-    // Resume the service if the user had it on.
-    if (await isEnabled() && !(await _service.isRunning())) {
-      await _service.startService();
+    // Resume the service if the user had it on — and make sure it's NOT
+    // running if they didn't (the plugin's watchdog can resurrect it; see
+    // onStart).
+    final running = await _service.isRunning();
+    if (await isEnabled()) {
+      if (!running) await _service.startService();
+    } else if (running) {
+      _service.invoke('stop');
     }
   }
 
@@ -144,6 +149,23 @@ void onStart(ServiceInstance service) async {
     tickTimer?.cancel();
     service.stopSelf();
   });
+
+  // The plugin's watchdog alarm restarts this service whenever it died without
+  // an explicit stop (app killed or updated, a lost 'stop' message), regardless
+  // of the user's setting. So never trust being started: share only while the
+  // user has background sharing ON. stopSelf() also cancels the watchdog.
+  Future<bool> stillEnabled() async {
+    try {
+      return (await _storage.read(key: _enabledKey)) == '1';
+    } catch (_) {
+      return false; // can't confirm consent → don't share
+    }
+  }
+
+  if (!await stillEnabled()) {
+    service.stopSelf();
+    return;
+  }
 
   // The background isolate has its own globals — set them up from scratch.
   await initPocketBase();
@@ -258,6 +280,10 @@ void onStart(ServiceInstance service) async {
   // battery drains or the phone is plugged in, so we re-arm a one-shot Timer
   // each time rather than a fixed Timer.periodic.
   Future<void> tick() async {
+    if (!await stillEnabled()) {
+      service.stopSelf();
+      return;
+    }
     final strategy = await currentStrategy();
     // Surface the current mode in the persistent notification.
     if (service is AndroidServiceInstance) {
