@@ -541,7 +541,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   : pin != null
                       ? Icons.push_pin_outlined
                       : Icons.place_outlined,
-              color: named ? Brand.lichen : context.cairn.muted),
+              ),
           title: Text(e.place?.name ?? pin?.name ?? 'Stopped',
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(e.duration.inMinutes < 1

@@ -47,6 +47,9 @@ class Brand {
         elevation: 0,
         scrolledUnderElevation: 0,
       ),
+      // Every UI icon is the same ink colour (app bar, list rows, standalone).
+      iconTheme: const IconThemeData(color: slate),
+      listTileTheme: const ListTileThemeData(iconColor: slate),
       extensions: const [CairnColors.light],
     );
   }
@@ -89,6 +92,8 @@ class Brand {
             s.contains(WidgetState.selected) ? mist : fog),
       ),
       dividerColor: nightLine,
+      iconTheme: const IconThemeData(color: mist),
+      listTileTheme: const ListTileThemeData(iconColor: mist),
       extensions: const [CairnColors.dark],
     );
   }

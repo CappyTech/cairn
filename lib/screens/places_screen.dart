@@ -145,7 +145,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(Icons.place_outlined, size: 48, color: context.cairn.muted),
+              Icon(Icons.place_outlined, size: 48),
               const SizedBox(height: 12),
               Text(
                 'No places yet.\nAdd Home or Work to get arrive/leave alerts '
@@ -168,7 +168,7 @@ class _PlacesScreenState extends State<PlacesScreen> {
         margin: const EdgeInsets.only(bottom: 8),
         child: ListTile(
           leading: CircleAvatar(
-            backgroundColor: Brand.lichen.withValues(alpha: 0.20),
+            backgroundColor: context.cairn.outline,
             child: Icon(Icons.place, color: context.cairn.ink),
           ),
           title: Text(p.name),
@@ -399,7 +399,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   const SizedBox(height: 8),
                   Row(
                     children: [
-                      Icon(Icons.social_distance, size: 20, color: context.cairn.muted),
+                      Icon(Icons.social_distance, size: 20),
                       const SizedBox(width: 8),
                       Text('Radius: ${_radius.round()} m',
                           style: const TextStyle(fontWeight: FontWeight.w500)),

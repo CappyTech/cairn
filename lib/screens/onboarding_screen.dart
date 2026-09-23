@@ -261,7 +261,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(icon, color: Brand.lichen),
+              Icon(icon),
               const SizedBox(width: 12),
               Expanded(child: Text(text, style: const TextStyle(fontSize: 15))),
             ],
@@ -422,7 +422,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 const SizedBox(height: 24),
-                Icon(icon, size: 40, color: Brand.lichen),
+                Icon(icon, size: 40),
                 const SizedBox(height: 16),
                 Text(title, style: Theme.of(context).textTheme.headlineSmall),
                 if (body != null) ...[

@@ -838,7 +838,7 @@ class _HomeScreenState extends State<HomeScreen> {
             padding: EdgeInsets.symmetric(vertical: 28, horizontal: 16),
             child: Column(
               children: [
-                Icon(Icons.group_add_outlined, size: 32, color: Brand.lichen),
+                Icon(Icons.group_add_outlined, size: 32),
                 SizedBox(height: 8),
                 Text('Add your first person',
                     style: TextStyle(fontWeight: FontWeight.w600)),
@@ -898,7 +898,7 @@ class _HomeScreenState extends State<HomeScreen> {
                     child: Text(_sharingSummary(),
                         overflow: TextOverflow.ellipsis),
                   ),
-                  Icon(Icons.expand_more, color: context.cairn.muted),
+                  Icon(Icons.expand_more),
                 ],
               ),
             ),
