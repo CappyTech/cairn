@@ -951,14 +951,33 @@ class _HomeScreenState extends State<HomeScreen> {
   // --- Map first: live map with a pull-up panel ------------------------------
 
   Widget _mapFirst() {
+    // No full-width app bar: the map runs to the top of the screen, with a
+    // compact floating bar (logo + settings) at the top-left.
     return Scaffold(
-      appBar: AppBar(title: _brandTitle(), actions: [_menu()]),
       body: LayoutBuilder(
         builder: (context, box) {
           const peek = 0.34;
           return Stack(
             children: [
               MapScreen(embedded: true, bottomInset: box.maxHeight * peek),
+              SafeArea(
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+                  child: Material(
+                    color: context.cairn.card,
+                    elevation: 2,
+                    shape: StadiumBorder(
+                        side: BorderSide(color: context.cairn.outline)),
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 14, right: 2),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [_brandTitle(), const SizedBox(width: 6), _menu()],
+                      ),
+                    ),
+                  ),
+                ),
+              ),
               DraggableScrollableSheet(
                 initialChildSize: peek,
                 minChildSize: 0.14,
