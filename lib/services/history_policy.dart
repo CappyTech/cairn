@@ -50,6 +50,14 @@ class HistoryPolicy {
   }
 
   /// Record the user's agreement to the current [days] policy and start syncing.
+  /// How long this server keeps history, in words — shared by onboarding and
+  /// the Home re-consent dialog so they always say the same thing.
+  static String retentionText(int days) => days <= 0
+      ? 'This server keeps your location history for as long as you use it '
+          '(no automatic deletion).'
+      : 'This server keeps your location history for $days '
+          '${days == 1 ? 'day' : 'days'}, then deletes it automatically.';
+
   static Future<void> agree(int days) async {
     serverDays = days;
     await Prefs.setHistoryConsent(

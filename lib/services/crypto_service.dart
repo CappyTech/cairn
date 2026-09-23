@@ -39,6 +39,11 @@ class CryptoService {
 
   /// Permanently forget this device's identity (used when deleting the
   /// account). Without a saved recovery phrase this is irreversible.
+  /// Whether this device already has an identity key (an existing install,
+  /// or one restored from a recovery phrase) — i.e. it isn't a first run.
+  static Future<bool> hasIdentity() async =>
+      (await _storage.read(key: _privKeyName)) != null;
+
   static Future<void> wipeIdentity() async {
     await _storage.delete(key: _privKeyName);
     await _storage.delete(key: _pairNonceName);

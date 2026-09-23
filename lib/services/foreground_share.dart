@@ -5,6 +5,7 @@ import 'auth_service.dart';
 import 'history_service.dart';
 import 'location_service.dart';
 import 'location_sharing_service.dart';
+import 'prefs.dart';
 
 /// Shares this device's location with contacts whenever the app is open —
 /// whichever screen or home layout is showing — and stops the moment it's
@@ -42,7 +43,10 @@ class ForegroundShare with WidgetsBindingObserver {
     if (_attached) return;
     _attached = true;
     WidgetsBinding.instance.addObserver(this);
-    _resume(askPermission: true);
+    // If the user said "Not now" to location in onboarding, don't prompt
+    // unasked — Home shows the "not sharing" notice with Retry instead.
+    Prefs.locationDeferred()
+        .then((deferred) => _resume(askPermission: !deferred));
   }
 
   /// Stop sharing and stop following the lifecycle (e.g. on sign-out/restart).
@@ -54,7 +58,10 @@ class ForegroundShare with WidgetsBindingObserver {
   }
 
   /// Try again after an [error] — asks for permission if needed.
-  Future<void> retry() => _resume(askPermission: true);
+  Future<void> retry() async {
+    await Prefs.setLocationDeferred(false);
+    await _resume(askPermission: true);
+  }
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
@@ -81,7 +88,9 @@ class ForegroundShare with WidgetsBindingObserver {
         final perm = await Geolocator.checkPermission();
         if (perm == LocationPermission.denied ||
             perm == LocationPermission.deniedForever) {
-          throw 'Location permission was denied.';
+          // Not asked yet ("Not now" in onboarding) or refused — either way,
+          // Retry asks.
+          throw "Cairn doesn't have location access yet.";
         }
       }
       // Show the cached fix straight away (a precise one can take seconds);

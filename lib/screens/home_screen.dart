@@ -119,11 +119,7 @@ class _HomeScreenState extends State<HomeScreen> {
     final result = await HistoryPolicy.evaluate();
     if (!mounted || result.state != HistoryPolicyState.needsConsent) return;
     final days = result.serverDays;
-    final kept = days <= 0
-        ? 'This server keeps your location history for as long as you use it '
-            '(no automatic deletion).'
-        : 'This server keeps your location history for $days '
-            '${days == 1 ? 'day' : 'days'}, then deletes it automatically.';
+    final kept = HistoryPolicy.retentionText(days);
     final agree = await showDialog<bool>(
       context: context,
       barrierDismissible: false,

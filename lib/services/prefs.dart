@@ -42,6 +42,29 @@ class Prefs {
   static Future<void> setApproxOnly(bool v) async =>
       _s.write(key: 'approx_only', value: v ? '1' : '0');
 
+  /// Whether first-run onboarding has been completed on this device.
+  static Future<bool> onboardingDone() async =>
+      (await _s.read(key: 'onboarding_done')) == '1';
+
+  static Future<void> setOnboardingDone() async =>
+      _s.write(key: 'onboarding_done', value: '1');
+
+  /// The user chose "Not now" for location in onboarding: don't pop the
+  /// system prompt unasked; Home shows a "not sharing" notice with Retry.
+  static Future<bool> locationDeferred() async =>
+      (await _s.read(key: 'location_deferred')) == '1';
+
+  static Future<void> setLocationDeferred(bool v) async =>
+      _s.write(key: 'location_deferred', value: v ? '1' : '0');
+
+  /// Same for notifications: don't request the permission implicitly (e.g.
+  /// when alerts first initialise) until the user asks for alerts.
+  static Future<bool> notificationsDeferred() async =>
+      (await _s.read(key: 'notifications_deferred')) == '1';
+
+  static Future<void> setNotificationsDeferred(bool v) async =>
+      _s.write(key: 'notifications_deferred', value: v ? '1' : '0');
+
   /// Whether to raise the content-free activity notifications — a new contact
   /// pairing, and a contact going quiet. Default ON. Gates both the foreground
   /// and the background-isolate alerts, so turning it off silences them

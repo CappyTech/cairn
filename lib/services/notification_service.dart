@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart'
     show kIsWeb, defaultTargetPlatform, TargetPlatform;
 import 'package:flutter_local_notifications/flutter_local_notifications.dart';
+import 'prefs.dart';
 
 /// Local, on-device notifications for app events (a new pairing, a contact
 /// going stale). These are **local** — composed and shown on the phone, never
@@ -18,7 +19,8 @@ class NotificationService {
           defaultTargetPlatform == TargetPlatform.iOS);
 
   /// Idempotent one-time setup: init the plugin, create the Android channel,
-  /// and ask for notification permission (Android 13+, iOS).
+  /// and ask for notification permission (Android 13+, iOS) — unless the user
+  /// deferred it in onboarding (see [requestPermission]).
   static Future<void> init() async {
     if (!_supported || _ready) return;
     // Status-bar icon: the Cairn mark as a white silhouette (a full-colour
@@ -40,12 +42,27 @@ class NotificationService {
       description: 'New pairings and contact activity',
       importance: Importance.defaultImportance,
     ));
+    if (!await Prefs.notificationsDeferred()) await _ask();
+    _ready = true;
+  }
+
+  static Future<void> _ask() async {
     try {
-      if (await android13?.areNotificationsEnabled() == false) {
-        await android13?.requestNotificationsPermission();
+      final android = _plugin.resolvePlatformSpecificImplementation<
+          AndroidFlutterLocalNotificationsPlugin>();
+      if (await android?.areNotificationsEnabled() == false) {
+        await android?.requestNotificationsPermission();
       }
     } catch (_) {/* older Android — no runtime permission needed */}
-    _ready = true;
+  }
+
+  /// The user explicitly asked for alerts (onboarding "Allow", or turning on
+  /// place alerts): clear any deferral and ask now.
+  static Future<void> requestPermission() async {
+    if (!_supported) return;
+    await Prefs.setNotificationsDeferred(false);
+    await init();
+    await _ask();
   }
 
   /// Show a notification. Best-effort: silently no-ops on unsupported platforms
