@@ -66,7 +66,10 @@ class AuthService {
       if (e.statusCode != 400) rethrow;
     }
 
-    // Assume first launch and create the account.
+    // Assume first launch and create the account — with the name chosen in
+    // onboarding, if there is one.
+    final chosen = await Prefs.name();
+    final name = (chosen == null || chosen.isEmpty) ? 'New device' : chosen;
     try {
       await pb.collection('users').create(body: {
         'email': id.email,
@@ -75,9 +78,9 @@ class AuthService {
         'emailVisibility': false,
         'public_key': id.publicKey,
         // Name is stored encrypted-to-self — the server can't read it.
-        'name': await CryptoService.sealTextForSelf('New device'),
+        'name': await CryptoService.sealTextForSelf(name),
       });
-      await Prefs.setName('New device');
+      await Prefs.setName(name);
     } on ClientException catch (e) {
       // The account already existed. That's expected in two cases we can
       // recover from by simply signing in below: a race with our own other

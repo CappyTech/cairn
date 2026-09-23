@@ -292,7 +292,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
       }
       // So alerts can actually show — init also requests the notification
       // permission (Android 13+/iOS), which the user may not have granted yet.
-      if (_alerts) await NotificationService.init();
+      if (_alerts) await NotificationService.requestPermission();
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;
@@ -372,7 +372,7 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
                   bottom: 12,
                   child: FloatingActionButton.small(
                     heroTag: 'myloc',
-                    tooltip: 'Use my location',
+                    tooltip: 'Use current location',
                     onPressed: () => _useMyLocation(),
                     child: const Icon(Icons.my_location),
                   ),

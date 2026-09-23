@@ -5,6 +5,9 @@ import 'services/pb_client.dart';
 import 'services/auth_service.dart';
 import 'services/background_share.dart';
 import 'screens/home_screen.dart';
+import 'screens/onboarding_screen.dart';
+import 'services/crypto_service.dart';
+import 'services/prefs.dart';
 import 'widgets/update_gate.dart';
 import 'widgets/restart_widget.dart';
 import 'widgets/server_settings_dialog.dart';
@@ -47,6 +50,7 @@ class AuthGate extends StatefulWidget {
 
 class _AuthGateState extends State<AuthGate> {
   late Future<void> _signIn;
+  bool _onboarding = false; // first run: onboarding creates the account
 
   @override
   void initState() {
@@ -57,12 +61,31 @@ class _AuthGateState extends State<AuthGate> {
   /// Sign in, but don't hang forever on an unreachable or black-hole address
   /// (a wrong IP that silently drops packets). A timeout surfaces a clear error
   /// with a way to fix the server address.
-  Future<void> _run() => AuthService.signInWithDevice().timeout(
-        const Duration(seconds: 15),
-        onTimeout: () => throw TimeoutException(
-            "Couldn't reach the server in time. Check the address is correct "
-            'and the server is running.'),
-      );
+  ///
+  /// A brand-new device (no identity key yet) goes to onboarding instead, which
+  /// creates the account itself. An existing install updating to a version
+  /// with onboarding skips it.
+  Future<void> _run() async {
+    if (!await Prefs.onboardingDone()) {
+      if (await CryptoService.hasIdentity()) {
+        await Prefs.setOnboardingDone();
+      } else {
+        _onboarding = true;
+        return;
+      }
+    }
+    await AuthService.signInWithDevice().timeout(
+      const Duration(seconds: 15),
+      onTimeout: () => throw TimeoutException(
+          "Couldn't reach the server in time. Check the address is correct "
+          'and the server is running.'),
+    );
+  }
+
+  void _onboardingDone() => setState(() {
+        _onboarding = false;
+        _signIn = _run();
+      });
 
   void _retry() => setState(() => _signIn = _run());
 
@@ -84,6 +107,7 @@ class _AuthGateState extends State<AuthGate> {
             body: Center(child: CircularProgressIndicator()),
           );
         }
+        if (_onboarding) return OnboardingScreen(onDone: _onboardingDone);
         if (snapshot.hasError) {
           return Scaffold(
             body: Center(
