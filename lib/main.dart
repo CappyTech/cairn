@@ -5,6 +5,7 @@ import 'services/pb_client.dart';
 import 'services/auth_service.dart';
 import 'services/background_share.dart';
 import 'screens/home_screen.dart';
+import 'widgets/update_gate.dart';
 import 'widgets/restart_widget.dart';
 import 'widgets/server_settings_dialog.dart';
 import 'theme/brand.dart';
@@ -126,7 +127,7 @@ class _AuthGateState extends State<AuthGate> {
             ),
           );
         }
-        return const HomeScreen();
+        return const UpdateGate(child: HomeScreen());
       },
     );
   }

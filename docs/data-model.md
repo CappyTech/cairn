@@ -46,7 +46,7 @@ X25519 → HKDF-SHA256 → ChaCha20-Poly1305):
 | `pair_requests` | `target`, `from` | a pending pairing | name/proof inside the encrypted `from_name` |
 | `places` | `owner` | that you have N places, timestamps | name/lat/lng/radius (one encrypted-to-self `ciphertext` blob per place) |
 | `location_history` | `owner` | `subject` (whose trail) + `day`, per-day | the day's breadcrumb points (encrypted-to-self `ciphertext`) |
-| `server_config` | public read | the retention policy number | — (it's not secret) |
+| `server_config` | public read | the retention policy number, the app-version policy | — (it's not secret) |
 
 Access rules enforce ownership (e.g. `location_shares` is readable only by its
 sender/recipient; `places`/`location_history` only by the owner). The
@@ -92,6 +92,33 @@ the client prunes to the effective window, and a daily server cron
 `day`, never reading ciphertext).
 
 See `services/history_service.dart`, `services/history_policy.dart`.
+
+## App updates
+
+The app tells people when their copy is out of date, from two sources
+(`services/app_update_service.dart`, `widgets/update_gate.dart`):
+
+- **The server's policy**, set by the operator in the `server_config` record
+  (Admin UI → Collections → server_config), as plain version names such as
+  `0.0.16`:
+  - `min_app_version`: anything older is blocked with an "Update Cairn to keep
+    sharing" screen. Raise it *before* deploying a server change that older
+    apps can't handle (e.g. the sealed-sender work in `metadata-privacy.md`),
+    so they stop cleanly instead of failing silently.
+  - `latest_app_version`: anything older gets a dismissible "A new version of
+    Cairn is available" banner.
+
+  Leave both empty for no policy. Invalid values are ignored rather than
+  locking everyone out.
+- **Google Play in-app updates**, for installs from Play: a newer build on Play
+  shows the same banner, and "Update" downloads it in the background, then
+  offers "Restart". A build uploaded with Play's in-app update priority of
+  4 or 5 is treated as required: it gets the blocking screen and an immediate,
+  full-screen update. The priority is set per release on upload (the
+  `inAppUpdatePriority` input of the Play upload step, default 0).
+
+The web app is served fresh by the server, so it skips these checks. Checks
+run at launch and whenever the app returns to the foreground.
 
 ## On-device only (never synced)
 
