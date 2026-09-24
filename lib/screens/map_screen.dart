@@ -52,6 +52,10 @@ class _MapScreenState extends State<MapScreen> {
   final _map = MapController();
   static const _fallback = LatLng(51.5074, -0.1278);
 
+  /// Pins and my dot are drawn ~40% see-through so the streets underneath
+  /// stay readable; their name labels stay solid for legibility.
+  static const _markerOpacity = 0.6;
+
   final _share = ForegroundShare.instance;
   LatLng? _me;
   bool _centred = false; // snapped to my first fix yet?
@@ -324,9 +328,12 @@ class _MapScreenState extends State<MapScreen> {
                     ],
                   ),
                 ),
-                Icon(Icons.push_pin, color: context.cairn.ink, size: 26, shadows: [
-                  Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
-                ]),
+                Opacity(
+                  opacity: _markerOpacity,
+                  child: Icon(Icons.push_pin, color: context.cairn.ink, size: 26, shadows: [
+                    Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
+                  ]),
+                ),
               ],
             ),
           ),
@@ -416,9 +423,14 @@ class _MapScreenState extends State<MapScreen> {
             ),
             const SizedBox(height: 2),
             // Teardrop pin with a white halo so it reads on the pale basemap.
-            Icon(Icons.location_on, color: context.cairn.ink, size: 36, shadows: const [
-              Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
-            ]),
+            // Opacity over the whole icon (not a translucent colour) so the
+            // shadow fades with it instead of showing through as a dark blot.
+            Opacity(
+              opacity: _markerOpacity,
+              child: Icon(Icons.location_on, color: context.cairn.ink, size: 36, shadows: const [
+                Shadow(blurRadius: 3, color: Colors.black45, offset: Offset(0, 1)),
+              ]),
+            ),
           ],
           ),
         ),
@@ -470,23 +482,28 @@ class _MapScreenState extends State<MapScreen> {
       );
 
   /// This device's own position: a slate dot with a white ring — a calm,
-  /// on-brand take on the familiar "you are here" marker.
-  Widget _meDot() => Container(
-        width: 22,
-        height: 22,
-        decoration: BoxDecoration(
-          // Ink on its page colour: slate/white in light, mist/night in dark,
-          // so "you" stands out on either basemap.
-          color: context.cairn.ink,
-          shape: BoxShape.circle,
-          border: Border.all(
-              color: Theme.of(context).brightness == Brightness.dark
-                  ? Brand.night
-                  : Colors.white,
-              width: 3),
-          boxShadow: const [
-            BoxShadow(blurRadius: 4, color: Colors.black38, offset: Offset(0, 1)),
-          ],
+  /// on-brand take on the familiar "you are here" marker. See-through like
+  /// the pins, so the street I'm standing on shows.
+  Widget _meDot() => Opacity(
+        opacity: _markerOpacity,
+        child: Container(
+          width: 22,
+          height: 22,
+          decoration: BoxDecoration(
+            // Ink on its page colour: slate/white in light, mist/night in
+            // dark, so "you" stands out on either basemap.
+            color: context.cairn.ink,
+            shape: BoxShape.circle,
+            border: Border.all(
+                color: Theme.of(context).brightness == Brightness.dark
+                    ? Brand.night
+                    : Colors.white,
+                width: 3),
+            boxShadow: const [
+              BoxShadow(
+                  blurRadius: 4, color: Colors.black38, offset: Offset(0, 1)),
+            ],
+          ),
         ),
       );
 
@@ -1078,6 +1095,7 @@ class _HeadingConePainter extends CustomPainter {
   const _HeadingConePainter();
 
   static const _halfSpread = 35 * math.pi / 180; // 70° total fan
+  static const _innerRadius = 11.0; // my dot's radius (22 dp)
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1086,9 +1104,13 @@ class _HeadingConePainter extends CustomPainter {
     // Canvas angles are clockwise from the +x axis; straight up is -pi/2.
     const start = -math.pi / 2 - _halfSpread;
     const sweep = 2 * _halfSpread;
+    // Start the wedge at the dot's rim, not the centre, so it doesn't show
+    // through the (see-through) dot as a dark notch.
     final path = ui.Path()
-      ..moveTo(center.dx, center.dy)
-      ..arcTo(Rect.fromCircle(center: center, radius: radius), start, sweep, false)
+      ..arcTo(Rect.fromCircle(center: center, radius: _innerRadius), start,
+          sweep, true)
+      ..arcTo(Rect.fromCircle(center: center, radius: radius), start + sweep,
+          -sweep, false)
       ..close();
     final paint = Paint()
       ..style = PaintingStyle.fill
