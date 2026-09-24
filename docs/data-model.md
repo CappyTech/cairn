@@ -129,6 +129,7 @@ do **not** follow a recovery-phrase restore:
 - **Per-contact toggles** — record history / place alerts (`services/contact_prefs_service.dart`)
 - **History retention consent + local override** (`services/prefs.dart`)
 - Speed unit, "approximate only" master switch, background-sharing on/off, saved server URL.
+- **Speed & direction toggles** (`services/motion_settings.dart`): share speed / share direction (default off; precise shares only), and my cone / compass / contacts' motion on my map (default on).
 
 ## Quick reference: does it sync?
 

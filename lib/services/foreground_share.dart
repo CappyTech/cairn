@@ -5,6 +5,7 @@ import 'auth_service.dart';
 import 'history_service.dart';
 import 'location_service.dart';
 import 'location_sharing_service.dart';
+import 'motion.dart';
 import 'prefs.dart';
 
 /// Shares this device's location with contacts whenever the app is open —
@@ -142,11 +143,18 @@ class ForegroundShare with WidgetsBindingObserver {
   }
 
   Future<void> _publish(Position p) async {
+    // A fix that's gone stale (stopped moving → no new fixes) no longer says
+    // anything about speed or course, so only a fresh one carries motion.
+    final fresh = Motion.isFresh(p.timestamp, DateTime.now());
     try {
       await LocationSharingService.publish(
         lat: p.latitude,
         lng: p.longitude,
         accuracy: p.accuracy,
+        speed: fresh ? p.speed : null,
+        speedAccuracy: p.speedAccuracy,
+        heading: fresh ? p.heading : null,
+        headingAccuracy: p.headingAccuracy,
       );
     } catch (_) {
       /* offline / no contacts — fine */

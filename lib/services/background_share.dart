@@ -246,8 +246,16 @@ void onStart(ServiceInstance service) async {
       final pos = await Geolocator.getCurrentPosition(
         locationSettings: LocationSettings(accuracy: accuracy),
       );
+      // A fresh one-shot fix, so its speed/course are current.
       await LocationSharingService.publish(
-          lat: pos.latitude, lng: pos.longitude, accuracy: pos.accuracy);
+        lat: pos.latitude,
+        lng: pos.longitude,
+        accuracy: pos.accuracy,
+        speed: pos.speed,
+        speedAccuracy: pos.speedAccuracy,
+        heading: pos.heading,
+        headingAccuracy: pos.headingAccuracy,
+      );
       // Record my own trail too (sampled; flushed at the end of the tick).
       final me = AuthService.currentUser;
       if (me != null) {
