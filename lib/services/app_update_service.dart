@@ -46,7 +46,9 @@ class AppUpdateService {
         .split(RegExp(r'[+-]'))
         .first
         .split('.')
-        .map((p) => int.tryParse(p) ?? 0)
+        // Leading digits only, so a lettered release tag ("0.0.16b", which
+        // CI turns into the version name) reads as 0.0.16 rather than 0.0.0.
+        .map((p) => int.tryParse(RegExp(r'^\d*').stringMatch(p)!) ?? 0)
         .toList();
     final pa = parts(a), pb = parts(b);
     for (var i = 0; i < pa.length || i < pb.length; i++) {
@@ -59,7 +61,7 @@ class AppUpdateService {
 
   /// Whether a version name is usable (digits and dots, e.g. "0.0.16").
   static bool _valid(String v) =>
-      RegExp(r'^\d+(\.\d+)*([+-].*)?$').hasMatch(v.trim());
+      RegExp(r'^\d+[a-z]*(\.\d+[a-z]*)*([+-].*)?$').hasMatch(v.trim());
 
   /// Decide from the server policy and Play's view. Blank/invalid policy
   /// values are ignored, so a misconfigured server can't lock everyone out
