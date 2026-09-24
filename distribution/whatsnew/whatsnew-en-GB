@@ -7,7 +7,7 @@ Cairn v0.0.17
 • Shares while the app is open, not just on the map.
 • Background sharing never runs when it's switched off or its notification is hidden.
 • Live "last seen" times without refreshing.
-• Clearer code scanning, with an easy paste option.
+• Clearer code scanning, with easy paste.
 • Update prompts when a new version is out.
 
 All end-to-end encrypted.
