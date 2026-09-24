@@ -245,7 +245,7 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
         const SizedBox(height: 8),
         TextButton(
           onPressed: () => _go(_Step.restore),
-          child: const Text('I have a recovery phrase'),
+          child: const Text('Restore a device'),
         ),
         TextButton(
           onPressed: _changeServer,
@@ -325,8 +325,11 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
     return _frame(
       back: _Step.welcome,
       icon: Icons.key_outlined,
-      title: 'Restore your account',
-      body: 'Enter your 24-word recovery phrase, with spaces between words.',
+      title: 'Restore a device',
+      body: 'Moving Cairn from another phone? Enter the 24-word recovery '
+          'phrase from that device, with spaces between words.\n\n'
+          'New to Cairn? You don\'t need a phrase or an account — just get '
+          'started.',
       content: TextField(
         controller: _phrase,
         enabled: !_busy,
@@ -343,7 +346,14 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
       actions: [
         FilledButton(
           onPressed: _busy ? null : _submitPhrase,
-          child: _busy ? const _Spinner() : const Text('Restore'),
+          child: _busy ? const _Spinner() : const Text('Restore device'),
+        ),
+        const SizedBox(height: 8),
+        // No dead end: anyone here by mistake (or without a phrase) can start
+        // fresh without going back.
+        OutlinedButton(
+          onPressed: _busy ? null : () => _go(_Step.privacy),
+          child: const Text("I don't have a phrase — get started"),
         ),
       ],
     );
