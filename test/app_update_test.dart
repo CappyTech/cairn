@@ -16,6 +16,13 @@ void main() {
       expect(cmp('1', '1.0.1'), -1);
     });
 
+    test('a letter suffix on a part counts as the same number', () {
+      expect(cmp('0.0.16b', '0.0.16'), 0);
+      expect(cmp('0.0.16a', '0.0.16b'), 0);
+      expect(cmp('0.0.16b', '0.0.15'), 1);
+      expect(cmp('0.0.16b', '0.0.17'), -1);
+    });
+
     test('ignores build and pre-release suffixes', () {
       expect(cmp('0.0.15+17', '0.0.15'), 0);
       expect(cmp('0.0.16-beta', '0.0.16'), 0);
@@ -62,6 +69,13 @@ void main() {
 
     test('Play priority alone (no update available) changes nothing', () {
       expect(eval('0.0.15', priority: 5), UpdateNeed.none);
+    });
+
+    test('a lettered install is not blocked by its own version', () {
+      expect(eval('0.0.16b', min: '0.0.16'), UpdateNeed.none);
+      expect(eval('0.0.16b', min: '0.0.16', latest: '0.0.16'), UpdateNeed.none);
+      expect(eval('0.0.16b', latest: '0.0.17'), UpdateNeed.recommended);
+      expect(eval('0.0.16', min: '0.0.16b'), UpdateNeed.none);
     });
 
     test('junk policy values are ignored, never lock the app', () {
