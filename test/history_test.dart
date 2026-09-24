@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_app/services/history_service.dart';
 import 'package:my_app/services/places_service.dart';
+import 'package:my_app/services/prefs.dart';
 import 'package:my_app/services/shared_places_service.dart';
 
 /// Pure logic behind history: point wire round-trip, day bucketing, merge/dedup,
@@ -28,10 +29,57 @@ void main() {
   });
 
   group('dayKey', () {
-    test('is the UTC calendar day', () {
-      expect(HistoryService.dayKey(DateTime.utc(2026, 9, 20, 23, 59)), '2026-09-20');
-      // A local-time instant is normalised to UTC first.
-      expect(HistoryService.dayKey(DateTime.utc(2026, 1, 5, 0, 0)), '2026-01-05');
+    test('is the local calendar day', () {
+      expect(HistoryService.dayKey(DateTime(2026, 9, 20, 23, 59)), '2026-09-20');
+      expect(HistoryService.dayKey(DateTime(2026, 1, 5, 0, 0)), '2026-01-05');
+      // A UTC instant is converted to local time first.
+      final utc = DateTime.utc(2026, 9, 20, 23, 30);
+      expect(HistoryService.dayKey(utc),
+          HistoryService.dayKey(utc.toLocal()));
+    });
+
+    test('pointsOnDay keeps only that local day, sorted', () {
+      final late = DateTime(2026, 9, 20, 23, 50);
+      final early = DateTime(2026, 9, 21, 0, 10);
+      final pts = [
+        HistoryPoint(1, 1, early.toUtc()),
+        HistoryPoint(1, 1, late.add(const Duration(minutes: 5)).toUtc()),
+        HistoryPoint(1, 1, late.toUtc()),
+      ];
+      final day = HistoryService.pointsOnDay(pts, '2026-09-20');
+      expect(day.map((p) => p.t),
+          [late.toUtc(), late.add(const Duration(minutes: 5)).toUtc()]);
+      expect(HistoryService.pointsOnDay(pts, '2026-09-21').single.t,
+          early.toUtc());
+    });
+  });
+
+  group('backgroundRecordingAllowed', () {
+    const agreed = HistoryConsent(days: 30, declined: false);
+    test('needs an agreement that is not declined', () {
+      expect(
+          HistoryService.backgroundRecordingAllowed(
+              stored: null, serverDays: 30),
+          isFalse);
+      expect(
+          HistoryService.backgroundRecordingAllowed(
+              stored: const HistoryConsent(days: 30, declined: true),
+              serverDays: 30),
+          isFalse);
+      expect(
+          HistoryService.backgroundRecordingAllowed(
+              stored: agreed, serverDays: 30),
+          isTrue);
+    });
+    test('stops if the policy changed; trusts the agreement when offline', () {
+      expect(
+          HistoryService.backgroundRecordingAllowed(
+              stored: agreed, serverDays: 7),
+          isFalse);
+      expect(
+          HistoryService.backgroundRecordingAllowed(
+              stored: agreed, serverDays: null),
+          isTrue);
     });
   });
 
@@ -217,6 +265,142 @@ void main() {
       expect(HistoryTimeline.pathLength([]), 0);
       final d = HistoryTimeline.pathLength([at(home, base(0)), away(base(1))]);
       expect(d, closeTo(1000, 20)); // 0.009° latitude ≈ 1 km
+    });
+  });
+
+  group('gaps in the data', () {
+    DateTime at8(int h, int m) => DateTime.utc(2026, 9, 20, h, m);
+
+    test('two far-apart sightings hours apart are a gap, not a trip', () {
+      // The reported bug: seen at Work at 04:11, next at Home at 12:42 — this
+      // used to read "Travelled 7 km · 8h 31m".
+      final pts = [
+        at(work, at8(4, 11)),
+        at(home, at8(12, 42)),
+        at(home, at8(12, 43)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Gap, Stay]);
+      final gap = tl[1] as Gap;
+      expect(gap.start, at8(4, 11));
+      expect(gap.end, at8(12, 42));
+      expect(gap.distanceMeters, greaterThan(1000));
+      expect(HistoryTimeline.travelledMeters(tl), 0);
+    });
+
+    test('a trip with a dropout splits into move, gap, move', () {
+      final pts = [
+        at(home, base(0)),
+        at(home, base(5)),
+        away(base(8)),
+        HistoryPoint(51.5074 + 0.018, -0.1278, base(11)),
+        // 40 min of nothing, then picked up again further on.
+        HistoryPoint(51.5074 + 0.05, -0.1278, base(51)),
+        HistoryPoint(51.5074 + 0.06, -0.1278, base(54)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Move, Gap, Move]);
+      expect((tl[1] as Move).from?.id, 'home');
+      expect((tl[1] as Move).end, base(11));
+      expect((tl[2] as Gap).start, base(11));
+      expect((tl[2] as Gap).end, base(51));
+      expect((tl[3] as Move).start, base(51));
+      // Travelled distance leaves out the jump across the gap.
+      expect(HistoryTimeline.travelledMeters(tl),
+          lessThan(HistoryTimeline.pathLength(pts)));
+    });
+
+    test('a long silence in the same place is still one stay', () {
+      final pts = [at(home, at8(1, 0)), at(home, at8(7, 0))];
+      final tl = HistoryTimeline.build(pts, [home]);
+      expect(tl.single, isA<Stay>());
+      expect(tl.single.duration, const Duration(hours: 6));
+    });
+
+    test('a lone fix between two gaps folds into one gap', () {
+      final pts = [
+        at(home, at8(8, 0)),
+        HistoryPoint(51.53, -0.1278, at8(9, 0)),
+        HistoryPoint(51.56, -0.1278, at8(10, 0)),
+        at(work, at8(11, 0)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Gap, Stay]);
+      expect((tl[1] as Gap).start, at8(8, 0));
+      expect((tl[1] as Gap).end, at8(11, 0));
+    });
+  });
+
+  group('trip geometry', () {
+    test('usable drops imprecise fixes, unless that leaves nothing', () {
+      final good = HistoryPoint(1, 1, base(0), 20);
+      final bad = HistoryPoint(1, 1, base(1), 900);
+      final unknown = HistoryPoint(1, 1, base(2));
+      expect(HistoryTimeline.usable([good, bad, unknown]), [good, unknown]);
+      expect(HistoryTimeline.usable([bad]), [bad]);
+    });
+
+    test('travel mode from speed', () {
+      expect(HistoryTimeline.modeForSpeed(1.4), TravelMode.walk);
+      expect(HistoryTimeline.modeForSpeed(4.5), TravelMode.cycle);
+      expect(HistoryTimeline.modeForSpeed(13), TravelMode.vehicle);
+      // ~1 km in 12 min ≈ 1.4 m/s → a walk.
+      final walk = HistoryTimeline.build(
+          [away(base(0)), HistoryPoint(51.5074 + 0.018, -0.1278, base(12))],
+          []).single as Move;
+      expect(walk.mode, TravelMode.walk);
+    });
+
+    test('positionAt interpolates, clamps, and knows about gaps', () {
+      final pts = [
+        HistoryPoint(0, 0, base(0)),
+        HistoryPoint(0, 1, base(10)),
+        HistoryPoint(0, 2, base(50)), // 40 min later: a gap
+      ];
+      final mid = HistoryTimeline.positionAt(pts, base(5));
+      expect(mid.lng, closeTo(0.5, 1e-9));
+      expect(mid.known, isTrue);
+      final inGap = HistoryTimeline.positionAt(pts, base(30));
+      expect(inGap.lng, 1); // held at the last fix
+      expect(inGap.known, isFalse);
+      expect(HistoryTimeline.positionAt(pts, base(-5)).lng, 0);
+      expect(HistoryTimeline.positionAt(pts, base(99)).lng, 2);
+    });
+
+    test('speedRuns groups segments by band and stays joined up', () {
+      // Walk 100 m/min, then drive ~1 km/min, then walk again.
+      final pts = [
+        HistoryPoint(51.5, -0.1, base(0)),
+        HistoryPoint(51.5009, -0.1, base(1)),
+        HistoryPoint(51.5018, -0.1, base(2)),
+        HistoryPoint(51.5108, -0.1, base(3)),
+        HistoryPoint(51.5198, -0.1, base(4)),
+        HistoryPoint(51.5207, -0.1, base(5)),
+      ];
+      final runs = HistoryTimeline.speedRuns(pts);
+      expect(runs.map((r) => r.mode),
+          [TravelMode.walk, TravelMode.vehicle, TravelMode.walk]);
+      expect(runs[0].points.last, same(runs[1].points.first));
+      expect(runs.fold<int>(0, (n, r) => n + r.points.length - 1),
+          pts.length - 1);
+    });
+
+    test('arrows are spaced along the path and point the way it goes', () {
+      // ~2 km due north.
+      final north = [
+        HistoryPoint(51.5, -0.1, base(0)),
+        HistoryPoint(51.518, -0.1, base(10)),
+      ];
+      final arrows = HistoryTimeline.arrows(north, spacingMeters: 400);
+      expect(arrows, hasLength(5));
+      for (final a in arrows) {
+        expect(a.bearing, closeTo(0, 0.5));
+      }
+      expect(arrows.first.lat, lessThan(arrows.last.lat));
+      // Too short for one arrow.
+      expect(HistoryTimeline.arrows(north.take(1).toList()), isEmpty);
+      // East is 90°.
+      expect(HistoryTimeline.bearing(51.5, -0.1, 51.5, -0.09), closeTo(90, 0.5));
     });
   });
 }

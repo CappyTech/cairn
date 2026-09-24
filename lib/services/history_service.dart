@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:convert';
 import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
@@ -80,12 +81,17 @@ class HistoryService {
   /// While off, [record] no-ops, so nothing is buffered or uploaded.
   static bool recordingEnabled = false;
 
-  /// The UTC calendar-day key ("YYYY-MM-DD") a timestamp belongs to.
-  static String dayKey(DateTime t) {
-    final u = t.toUtc();
-    final mm = u.month.toString().padLeft(2, '0');
-    final dd = u.day.toString().padLeft(2, '0');
-    return '${u.year}-$mm-$dd';
+  /// The local calendar-day key ("YYYY-MM-DD") a timestamp belongs to, so a
+  /// day in History runs midnight to midnight where the phone is. (Rows written
+  /// before this were keyed by UTC day; [loadDay] reads the neighbouring rows
+  /// too and filters by local day, so both kinds show up on the right day.)
+  static String dayKey(DateTime t) => _keyOfDate(t.toLocal());
+
+  /// "YYYY-MM-DD" from a date's own fields (no timezone conversion).
+  static String _keyOfDate(DateTime d) {
+    final mm = d.month.toString().padLeft(2, '0');
+    final dd = d.day.toString().padLeft(2, '0');
+    return '${d.year}-$mm-$dd';
   }
 
   /// Buffer a point for [subject] (my id, or a contact's), applying sampling so
@@ -203,32 +209,44 @@ class HistoryService {
     return [for (final r in rows) r.getStringValue('day')];
   }
 
-  /// Load + decrypt a subject's breadcrumb points for one day (sorted).
+  /// Load + decrypt a subject's breadcrumb points for one local [day]
+  /// (sorted). Reads the rows for the day either side as well — older rows are
+  /// keyed by UTC day, and a phone in another timezone keys by its own — then
+  /// keeps only the points that fall on [day] locally.
   static Future<List<HistoryPoint>> loadDay(String subject, String day) async {
     final me = AuthService.currentUser;
     if (me == null) return [];
-    RecordModel row;
+    final d = DateTime.parse('${day}T12:00:00');
+    final lo = dayKey(d.subtract(const Duration(days: 1)));
+    final hi = dayKey(d.add(const Duration(days: 1)));
+    List<RecordModel> rows;
     try {
-      row = await pb.collection(_collection).getFirstListItem(
-            'owner = "${me.id}" && subject = "$subject" && day = "$day"',
+      rows = await pb.collection(_collection).getFullList(
+            filter: 'owner = "${me.id}" && subject = "$subject" && '
+                'day >= "$lo" && day <= "$hi"',
           );
     } catch (_) {
       return [];
     }
-    try {
-      final clear =
-          await CryptoService.openSealedText(row.getStringValue('ciphertext'));
-      final pts = [
-        for (final j in (jsonDecode(clear) as Map<String, dynamic>)['points']
-            as List)
-          HistoryPoint.fromJson(j as Map<String, dynamic>)
-      ];
-      pts.sort((a, b) => a.t.compareTo(b.t));
-      return pts;
-    } catch (_) {
-      return [];
+    var pts = <HistoryPoint>[];
+    for (final row in rows) {
+      try {
+        final clear = await CryptoService.openSealedText(
+            row.getStringValue('ciphertext'));
+        pts = mergePoints(pts, [
+          for (final j in (jsonDecode(clear) as Map<String, dynamic>)['points']
+              as List)
+            HistoryPoint.fromJson(j as Map<String, dynamic>)
+        ]);
+      } catch (_) {/* unreadable row — skip it */}
     }
+    return pointsOnDay(pts, day);
   }
+
+  /// The points of [pts] whose local calendar day is [day], sorted. Pure.
+  static List<HistoryPoint> pointsOnDay(List<HistoryPoint> pts, String day) =>
+      [for (final p in pts) if (dayKey(p.t) == day) p]
+        ..sort((a, b) => a.t.compareTo(b.t));
 
   /// Delete all recorded history for [subject] (all days).
   static Future<void> deleteSubject(String subject) async {
@@ -252,15 +270,30 @@ class HistoryService {
   /// The server's advertised retention (days; 0 = keep everything). Read from
   /// the public `server_config` singleton. Best-effort: 0 (keep all) if the
   /// config is missing or unreachable.
-  static Future<int> fetchServerRetentionDays() async {
+  static Future<int> fetchServerRetentionDays() async =>
+      await tryFetchServerRetentionDays() ?? 0;
+
+  /// As [fetchServerRetentionDays], but null when the server can't be reached
+  /// (so an offline phone isn't mistaken for a changed policy).
+  static Future<int?> tryFetchServerRetentionDays() async {
     try {
       final rec =
           await pb.collection('server_config').getFirstListItem('');
       final v = rec.getIntValue('history_retention_days');
       return v < 0 ? 0 : v;
     } catch (_) {
-      return 0;
+      return null;
     }
+  }
+
+  /// Whether the background service may record history: the user agreed to
+  /// this server's policy, and it hasn't changed since ([serverDays] null =
+  /// couldn't check, so trust the stored agreement). Pure.
+  static bool backgroundRecordingAllowed(
+      {required HistoryConsent? stored, required int? serverDays}) {
+    if (stored == null || stored.declined) return false;
+    return serverDays == null ||
+        !consentNeeded(serverDays: serverDays, stored: stored);
   }
 
   /// The effective retention window from the server's policy and the user's
@@ -283,16 +316,20 @@ class HistoryService {
   }
 
   /// Which of [existingDays] ("YYYY-MM-DD") fall outside a [keepDays]-day window
-  /// ending [todayUtc] (inclusive), and so should be pruned. 0/negative keepDays
-  /// = keep everything. Pure (ISO date strings sort chronologically).
+  /// ending on [today]'s calendar date (inclusive), and so should be pruned.
+  /// 0/negative keepDays = keep everything. Pure (ISO date strings sort
+  /// chronologically).
   static List<String> daysToPrune(
-      List<String> existingDays, int keepDays, DateTime todayUtc) {
+      List<String> existingDays, int keepDays, DateTime today) {
     if (keepDays <= 0) return [];
-    final cutoff = DateTime.utc(todayUtc.year, todayUtc.month, todayUtc.day)
-        .subtract(Duration(days: keepDays - 1));
-    final cutoffKey = dayKey(cutoff);
+    final cutoffKey = _cutoffKey(keepDays, today);
     return [for (final d in existingDays) if (d.compareTo(cutoffKey) < 0) d];
   }
+
+  /// The oldest day key a [keepDays]-day window ending on [today] keeps.
+  static String _cutoffKey(int keepDays, DateTime today) => _keyOfDate(
+      DateTime.utc(today.year, today.month, today.day)
+          .subtract(Duration(days: keepDays - 1)));
 
   /// Delete my history rows older than the [keepDays] window (all subjects).
   /// No-op when keeping everything. Best-effort.
@@ -300,10 +337,7 @@ class HistoryService {
     if (keepDays <= 0) return;
     final me = AuthService.currentUser;
     if (me == null) return;
-    final now = DateTime.now().toUtc();
-    final cutoff = DateTime.utc(now.year, now.month, now.day)
-        .subtract(Duration(days: keepDays - 1));
-    final cutoffKey = dayKey(cutoff);
+    final cutoffKey = _cutoffKey(keepDays, DateTime.now());
     try {
       final rows = await pb.collection(_collection).getFullList(
             filter: 'owner = "${me.id}" && day < "$cutoffKey"',
@@ -398,8 +432,9 @@ class HistoryService {
   }
 }
 
-/// One entry in a day's timeline: either a [Stay] (lingered in one spot) or a
-/// [Move] (travelled between stays). Derived from the breadcrumb trail.
+/// One entry in a day's timeline: a [Stay] (lingered in one spot), a [Move]
+/// (travelled between stays) or a [Gap] (no location data for a while, so we
+/// don't know what happened). Derived from the breadcrumb trail.
 sealed class TimelineEntry {
   final DateTime start;
   final DateTime end;
@@ -422,8 +457,13 @@ class Stay extends TimelineEntry {
   }) : super(start, end);
 }
 
+/// How someone was most likely getting about, guessed from speed alone (so a
+/// bus and a car look the same: both are [vehicle]).
+enum TravelMode { walk, cycle, vehicle }
+
 /// Travel between two stays (or from the start / to the end of the trail).
-/// [from]/[to] are the saved places at either end, when there are any.
+/// [from]/[to] are the saved places at either end, when there are any. Never
+/// spans a [Gap]: the path is continuous data.
 class Move extends TimelineEntry {
   final Place? from;
   final Place? to;
@@ -437,15 +477,75 @@ class Move extends TimelineEntry {
     required DateTime start,
     required DateTime end,
   }) : super(start, end);
+
+  /// Average speed over the move (m/s), 0 when it took no time.
+  double get avgSpeedMps => duration.inSeconds <= 0
+      ? 0
+      : distanceMeters / duration.inSeconds;
+
+  TravelMode get mode => HistoryTimeline.modeForSpeed(avgSpeedMps);
 }
 
-/// Stay/move segmentation of a day's trail — pure, so it's unit-tested.
+/// A stretch with no location data (phone off, no signal, app killed) between
+/// two points that are too far apart in time to join up. [fromLat]/[fromLng]
+/// is the last fix before it and [toLat]/[toLng] the first one after.
+class Gap extends TimelineEntry {
+  final double fromLat;
+  final double fromLng;
+  final double toLat;
+  final double toLng;
+  const Gap({
+    required this.fromLat,
+    required this.fromLng,
+    required this.toLat,
+    required this.toLng,
+    required DateTime start,
+    required DateTime end,
+  }) : super(start, end);
+
+  /// Straight-line distance between the fixes either side of the gap.
+  double get distanceMeters =>
+      PlacesService.distanceMeters(fromLat, fromLng, toLat, toLng);
+}
+
+/// Stay/move/gap segmentation of a day's trail, plus the geometry the map
+/// draws from it — pure, so it's unit-tested.
 abstract final class HistoryTimeline {
   /// Points within this distance of a stay's centre belong to the same stay.
   static const stayRadiusMeters = 100.0;
 
   /// Minimum time lingering in an unnamed spot for it to count as a stay.
   static const minStay = Duration(minutes: 5);
+
+  /// Two consecutive fixes further apart than this (and not in the same spot)
+  /// are a [Gap], not travel: we don't know the route or the timing between
+  /// them. Comfortably above the slowest background cadence.
+  static const maxGap = Duration(minutes: 20);
+
+  /// Fixes less precise than this are dropped: they scatter across the map and
+  /// read as journeys that never happened.
+  static const maxAccuracyMeters = 250.0;
+
+  /// Speed (m/s) at or above which travel is cycling (~8 km/h), and at or
+  /// above which it's a vehicle (~25 km/h).
+  static const cycleMps = 2.2;
+  static const vehicleMps = 7.0;
+
+  static TravelMode modeForSpeed(double mps) => mps >= vehicleMps
+      ? TravelMode.vehicle
+      : mps >= cycleMps
+          ? TravelMode.cycle
+          : TravelMode.walk;
+
+  /// [pts] without the imprecise fixes — unless that would leave nothing, in
+  /// which case a rough trail beats an empty one. Pure.
+  static List<HistoryPoint> usable(List<HistoryPoint> pts) {
+    final good = [
+      for (final p in pts)
+        if (p.acc == null || p.acc! <= maxAccuracyMeters) p
+    ];
+    return good.isEmpty ? [...pts] : good;
+  }
 
   /// The shared pin nearest [lat]/[lng] within [stayRadiusMeters], or null —
   /// used to name an otherwise-unnamed stop. Pure.
@@ -472,11 +572,18 @@ abstract final class HistoryTimeline {
     return d;
   }
 
-  /// Split a day's [pts] into alternating stays and moves. Consecutive points
-  /// in the same saved place, or within [stayRadiusMeters] of each other
-  /// outside any place, form a cluster; a cluster is a stay when it lasts at
-  /// least [minStay], or is in a saved place at the start/end of the day, or is
-  /// the only cluster. Everything between stays is a move.
+  /// Distance actually travelled in a timeline: the moves only, not the
+  /// straight-line jumps across gaps.
+  static double travelledMeters(List<TimelineEntry> timeline) => timeline
+      .whereType<Move>()
+      .fold(0.0, (sum, m) => sum + m.distanceMeters);
+
+  /// Split a day's [pts] into stays, moves and gaps. Consecutive points in the
+  /// same saved place, or within [stayRadiusMeters] of each other outside any
+  /// place, form a cluster; a cluster is a stay when it lasts at least
+  /// [minStay], or is in a saved place at the start/end of the day, or is the
+  /// only cluster. Everything between stays is travel, cut into moves wherever
+  /// the data drops out for longer than [maxGap].
   static List<TimelineEntry> build(List<HistoryPoint> pts, List<Place> places) {
     if (pts.isEmpty) return [];
     final s = [...pts]..sort((a, b) => a.t.compareTo(b.t));
@@ -528,29 +635,73 @@ abstract final class HistoryTimeline {
       }
     }
 
-    // 3. Interleave moves between the stays.
-    Move move(int from, int to, Place? fromPlace, Place? toPlace) {
-      final path = s.sublist(from, to + 1);
-      return Move(
-        from: fromPlace,
-        to: toPlace,
-        distanceMeters: pathLength(path),
-        path: path,
-        start: s[from].t,
-        end: s[to].t,
-      );
+    // 3. Interleave travel between the stays: moves over continuous data,
+    // gaps where it drops out.
+    final out = <TimelineEntry>[];
+    void travel(int from, int to, Place? fromPlace, Place? toPlace) {
+      // Cut [from..to] into runs of points with no gap longer than maxGap.
+      final runs = <(int, int)>[];
+      var runStart = from;
+      for (var k = from; k < to; k++) {
+        if (s[k + 1].t.difference(s[k].t) > maxGap) {
+          runs.add((runStart, k));
+          runStart = k + 1;
+        }
+      }
+      runs.add((runStart, to));
+
+      for (var r = 0; r < runs.length; r++) {
+        final (a, b) = runs[r];
+        if (r > 0) {
+          final prevEnd = runs[r - 1].$2;
+          final last = out.isEmpty ? null : out.last;
+          if (last is Gap && last.end == s[prevEnd].t) {
+            // A lone fix between two gaps: fold it into one longer gap.
+            out[out.length - 1] = Gap(
+              fromLat: last.fromLat,
+              fromLng: last.fromLng,
+              toLat: s[a].lat,
+              toLng: s[a].lng,
+              start: last.start,
+              end: s[a].t,
+            );
+          } else {
+            out.add(Gap(
+              fromLat: s[prevEnd].lat,
+              fromLng: s[prevEnd].lng,
+              toLat: s[a].lat,
+              toLng: s[a].lng,
+              start: s[prevEnd].t,
+              end: s[a].t,
+            ));
+          }
+        }
+        if (b > a) {
+          final path = s.sublist(a, b + 1);
+          out.add(Move(
+            from: r == 0 ? fromPlace : null,
+            to: r == runs.length - 1 ? toPlace : null,
+            distanceMeters: pathLength(path),
+            path: path,
+            start: s[a].t,
+            end: s[b].t,
+          ));
+        }
+      }
     }
 
-    if (stays.isEmpty) return [move(0, s.length - 1, null, null)];
-    final out = <TimelineEntry>[];
+    if (stays.isEmpty) {
+      travel(0, s.length - 1, null, null);
+      return out;
+    }
     if (stays.first.start > 0) {
-      out.add(move(0, stays.first.start, null, stays.first.place));
+      travel(0, stays.first.start, null, stays.first.place);
     }
     for (var k = 0; k < stays.length; k++) {
       final c = stays[k];
       if (k > 0) {
         final prev = stays[k - 1];
-        out.add(move(prev.end, c.start, prev.place, c.place));
+        travel(prev.end, c.start, prev.place, c.place);
       }
       out.add(Stay(
         place: c.place,
@@ -561,7 +712,104 @@ abstract final class HistoryTimeline {
       ));
     }
     if (stays.last.end < s.length - 1) {
-      out.add(move(stays.last.end, s.length - 1, stays.last.place, null));
+      travel(stays.last.end, s.length - 1, stays.last.place, null);
+    }
+    return out;
+  }
+
+  /// Where the trail was at [t]: interpolated between the fixes either side,
+  /// or — inside a gap — the last fix before it, with [known] false. Clamped
+  /// to the trail's ends. [pts] must be time-sorted and non-empty. Pure.
+  static ({double lat, double lng, bool known}) positionAt(
+      List<HistoryPoint> pts, DateTime t) {
+    if (!t.isAfter(pts.first.t)) {
+      return (lat: pts.first.lat, lng: pts.first.lng, known: true);
+    }
+    if (!t.isBefore(pts.last.t)) {
+      return (lat: pts.last.lat, lng: pts.last.lng, known: true);
+    }
+    // Binary search for the last fix at or before t.
+    var lo = 0, hi = pts.length - 1;
+    while (hi - lo > 1) {
+      final mid = (lo + hi) ~/ 2;
+      if (pts[mid].t.isAfter(t)) {
+        hi = mid;
+      } else {
+        lo = mid;
+      }
+    }
+    final a = pts[lo], b = pts[hi];
+    final span = b.t.difference(a.t);
+    if (span > maxGap) return (lat: a.lat, lng: a.lng, known: false);
+    final f = span.inMilliseconds == 0
+        ? 0.0
+        : t.difference(a.t).inMilliseconds / span.inMilliseconds;
+    return (
+      lat: a.lat + (b.lat - a.lat) * f,
+      lng: a.lng + (b.lng - a.lng) * f,
+      known: true,
+    );
+  }
+
+  /// Split a move's [path] into runs of the same speed band (for colouring
+  /// the line by speed). Neighbouring runs share their boundary point so the
+  /// line stays joined up. Pure.
+  static List<({TravelMode mode, List<HistoryPoint> points})> speedRuns(
+      List<HistoryPoint> path) {
+    final out = <({TravelMode mode, List<HistoryPoint> points})>[];
+    for (var i = 0; i + 1 < path.length; i++) {
+      final a = path[i], b = path[i + 1];
+      final secs = b.t.difference(a.t).inMilliseconds / 1000;
+      final mps = secs <= 0
+          ? 0.0
+          : PlacesService.distanceMeters(a.lat, a.lng, b.lat, b.lng) / secs;
+      final mode = modeForSpeed(mps);
+      if (out.isNotEmpty && out.last.mode == mode) {
+        out.last.points.add(b);
+      } else {
+        out.add((mode: mode, points: [a, b]));
+      }
+    }
+    return out;
+  }
+
+  /// Initial compass bearing (degrees clockwise from north) from a to b.
+  static double bearing(double lat1, double lng1, double lat2, double lng2) {
+    final p1 = lat1 * math.pi / 180, p2 = lat2 * math.pi / 180;
+    final dl = (lng2 - lng1) * math.pi / 180;
+    final y = math.sin(dl) * math.cos(p2);
+    final x = math.cos(p1) * math.sin(p2) -
+        math.sin(p1) * math.cos(p2) * math.cos(dl);
+    return (math.atan2(y, x) * 180 / math.pi + 360) % 360;
+  }
+
+  /// Evenly spaced direction arrows along [path]: one per [spacingMeters] of
+  /// travel (at least one on any path longer than that, at most [maxArrows]),
+  /// each pointing along the segment it sits on. Pure.
+  static List<({double lat, double lng, double bearing})> arrows(
+      List<HistoryPoint> path,
+      {double spacingMeters = 400,
+      int maxArrows = 8}) {
+    final total = pathLength(path);
+    if (path.length < 2 || total < spacingMeters) return [];
+    final n = math.min(maxArrows, (total / spacingMeters).floor());
+    final out = <({double lat, double lng, double bearing})>[];
+    var walked = 0.0;
+    var k = 0;
+    for (var i = 0; i + 1 < path.length && k < n; i++) {
+      final a = path[i], b = path[i + 1];
+      final seg = PlacesService.distanceMeters(a.lat, a.lng, b.lat, b.lng);
+      // Arrows sit at the middle of each 1/n share of the path.
+      while (k < n && walked + seg >= total * (k + 0.5) / n) {
+        final f = seg == 0 ? 0.0 : (total * (k + 0.5) / n - walked) / seg;
+        out.add((
+          lat: a.lat + (b.lat - a.lat) * f,
+          lng: a.lng + (b.lng - a.lng) * f,
+          bearing: bearing(a.lat, a.lng, b.lat, b.lng),
+        ));
+        k++;
+      }
+      walked += seg;
     }
     return out;
   }

@@ -136,7 +136,7 @@ class ForegroundShare with WidgetsBindingObserver {
         subject: me.id,
         lat: p.latitude,
         lng: p.longitude,
-        ts: DateTime.now().toUtc(),
+        ts: p.timestamp.toUtc(), // when the fix was taken
         accuracy: p.accuracy,
       );
     }
