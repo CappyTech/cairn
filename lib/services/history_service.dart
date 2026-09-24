@@ -133,7 +133,7 @@ class HistoryService {
       }
       for (final d in byDay.entries) {
         try {
-          await _appendToDay(me.id, subject, d.key, d.value);
+          await appendToDay(pb, me.id, subject, d.key, d.value);
         } catch (_) {
           // Put these points back so we retry next flush.
           (_buffer[subject] ??= []).addAll(d.value);
@@ -142,24 +142,62 @@ class HistoryService {
     }
   }
 
+  /// How many times [appendToDay] re-reads and retries after losing a race.
+  static const _maxWriteAttempts = 5;
+
   /// Merge new points into a day's blob (dedup by second, sorted), sealing the
   /// result to myself. Pure merge logic is factored into [mergePoints].
-  static Future<void> _appendToDay(String ownerId, String subject, String day,
-      List<HistoryPoint> newPts) async {
+  ///
+  /// Other writers append to the same row too (this phone's background
+  /// service, my other devices), so the write is compare-and-swap: an update
+  /// carries the row's `rev` + 1 and the server (pb_hooks/history_rev.pb.js)
+  /// refuses it with 409 if someone wrote in between. Then — or if a create
+  /// lost to someone else's create — re-read, re-merge and try again. Throws
+  /// once out of attempts, so [flush] keeps the points for next time.
+  ///
+  /// [seal]/[open] default to sealing to myself; tests pass plain text so a
+  /// live-server test can run this without a device key.
+  static Future<void> appendToDay(PocketBase client, String ownerId,
+      String subject, String day, List<HistoryPoint> newPts,
+      {Future<String> Function(String clear) seal = CryptoService.sealTextForSelf,
+      Future<String> Function(String blob) open =
+          CryptoService.openSealedText}) async {
+    for (var attempt = 1;; attempt++) {
+      try {
+        await _tryAppendToDay(
+            client, ownerId, subject, day, newPts, seal, open);
+        return;
+      } on ClientException catch (e) {
+        final lostRace = e.statusCode == 409 || e.statusCode == 400;
+        if (!lostRace || attempt >= _maxWriteAttempts) rethrow;
+        // Brief, growing pause so two writers don't collide in lockstep.
+        await Future<void>.delayed(Duration(milliseconds: 150 * attempt));
+      }
+    }
+  }
+
+  static Future<void> _tryAppendToDay(
+      PocketBase client,
+      String ownerId,
+      String subject,
+      String day,
+      List<HistoryPoint> newPts,
+      Future<String> Function(String) seal,
+      Future<String> Function(String) open) async {
     RecordModel? existing;
     try {
-      existing = await pb.collection(_collection).getFirstListItem(
+      existing = await client.collection(_collection).getFirstListItem(
             'owner = "$ownerId" && subject = "$subject" && day = "$day"',
           );
-    } catch (_) {
+    } on ClientException catch (e) {
+      if (e.statusCode != 404) rethrow; // offline etc. — don't clobber
       existing = null; // no row yet
     }
 
     final current = <HistoryPoint>[];
     if (existing != null) {
       try {
-        final clear = await CryptoService.openSealedText(
-            existing.getStringValue('ciphertext'));
+        final clear = await open(existing.getStringValue('ciphertext'));
         for (final j in (jsonDecode(clear) as Map<String, dynamic>)['points']
             as List) {
           current.add(HistoryPoint.fromJson(j as Map<String, dynamic>));
@@ -168,17 +206,23 @@ class HistoryService {
     }
 
     final merged = mergePoints(current, newPts);
-    final blob = await CryptoService.sealTextForSelf(
-        jsonEncode({'points': [for (final p in merged) p.toJson()]}));
+    final blob =
+        await seal(jsonEncode({'points': [for (final p in merged) p.toJson()]}));
 
     if (existing != null) {
-      await pb.collection(_collection).update(existing.id, body: {'ciphertext': blob});
+      await client.collection(_collection).update(existing.id, body: {
+        'ciphertext': blob,
+        'rev': existing.getIntValue('rev') + 1,
+      });
     } else {
-      await pb.collection(_collection).create(body: {
+      // A concurrent create for the same day hits the unique index (400);
+      // the retry then finds that row and merges into it.
+      await client.collection(_collection).create(body: {
         'owner': ownerId,
         'subject': subject,
         'day': day,
         'ciphertext': blob,
+        'rev': 1,
       });
     }
   }

@@ -206,6 +206,16 @@ capability-token core as the mailbox model. So the safe first step was timing.
   and an **opt-in "Snap to roads"** routes it along the streets via FOSSGIS's
   public OSRM. That's the only place History sends coordinates off the device,
   and only after the user agrees. `services/road_snap_service.dart`.
+  **No more lost points:** several writers (the app and its background
+  service, or two phones on one account) append to the same daily row, and
+  the later one used to overwrite the earlier one's points. Rows now carry a
+  `rev` number. An update must send the rev it read plus one, and the server
+  refuses a stale one with 409 (checked and saved in one transaction). The
+  client then re-reads, merges and retries. *Deploy note:*
+  `pb_migrations/1758800000_add_history_rev.js` adds the field and
+  `pb_hooks/history_rev.pb.js` enforces it. Older apps still work (their
+  writes just bump rev). `test/integration_history_race_test.dart` checks it
+  against a live server.
 - ✅ **Notifications that respect privacy** *(done)*. Local (never
   server-routed) notifications for a **new pairing** and a **contact going
   quiet**, so nothing about them leaks through a push service — bodies are
