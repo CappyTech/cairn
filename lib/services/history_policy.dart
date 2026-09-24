@@ -74,6 +74,20 @@ class HistoryPolicy {
     HistoryService.recordingEnabled = false;
   }
 
+  /// For the background service, which runs in its own isolate with its own
+  /// (off) copy of [HistoryService.recordingEnabled] and can't ask the user
+  /// anything: record only if they agreed to this server's policy and it
+  /// hasn't changed since. Cheap; call it every tick so a decline in the app
+  /// takes effect on the next one.
+  static Future<void> refreshForBackground() async {
+    final stored = await Prefs.historyConsent(serverUrl);
+    final days = stored == null || stored.declined
+        ? null
+        : await HistoryService.tryFetchServerRetentionDays();
+    HistoryService.recordingEnabled = HistoryService.backgroundRecordingAllowed(
+        stored: stored, serverDays: days);
+  }
+
   /// Re-prune after the user changes their local override.
   static Future<void> applyLocalChange() => _pruneToEffective();
 

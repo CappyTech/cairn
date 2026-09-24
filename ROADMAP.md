@@ -191,6 +191,31 @@ capability-token core as the mailbox model. So the safe first step was timing.
   creates the collection + a default record — set the window in the Admin UI
   (Collections → `server_config`); the Dockerfile now ships `pb_hooks/`.
   `services/history_policy.dart`.
+- ✅ **Better trips in History** *(done)*. The background service now
+  actually records history: it runs in its own isolate, where the consent
+  switch started off, so only foreground fixes were being saved and a day
+  showed up as a couple of dots joined by one long "trip". Each tick
+  now follows the stored consent (`HistoryPolicy.refreshForBackground`), and
+  fixes are stamped with the time they were taken. The timeline gained
+  **gaps**: two fixes more than 20 min apart in different spots read as "No
+  location data", drawn dashed, instead of an 8-hour journey, and distance
+  counts moves only. Days are **local** midnight-to-midnight (older UTC-keyed
+  rows are read alongside and filtered). Trips are coloured by speed with a
+  walk/cycle/vehicle guess, carry direction arrows, and stops are numbered.
+  The scrubber moves by **time**, not by point. Tapping a trip focuses it,
+  and an **opt-in "Snap to roads"** routes it along the streets via FOSSGIS's
+  public OSRM. That's the only place History sends coordinates off the device,
+  and only after the user agrees. `services/road_snap_service.dart`.
+  **No more lost points:** several writers (the app and its background
+  service, or two phones on one account) append to the same daily row, and
+  the later one used to overwrite the earlier one's points. Rows now carry a
+  `rev` number. An update must send the rev it read plus one, and the server
+  refuses a stale one with 409 (checked and saved in one transaction). The
+  client then re-reads, merges and retries. *Deploy note:*
+  `pb_migrations/1758800000_add_history_rev.js` adds the field and
+  `pb_hooks/history_rev.pb.js` enforces it. Older apps still work (their
+  writes just bump rev). `test/integration_history_race_test.dart` checks it
+  against a live server.
 - ✅ **Notifications that respect privacy** *(done)*. Local (never
   server-routed) notifications for a **new pairing** and a **contact going
   quiet**, so nothing about them leaks through a push service — bodies are

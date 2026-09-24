@@ -12,6 +12,7 @@ import 'location_sharing_service.dart';
 import 'bg_strategy.dart';
 import 'places_service.dart';
 import 'geofence_monitor.dart';
+import 'history_policy.dart';
 import 'history_service.dart';
 import 'pairing_service.dart';
 import 'prefs.dart';
@@ -263,7 +264,7 @@ void onStart(ServiceInstance service) async {
           subject: me.id,
           lat: pos.latitude,
           lng: pos.longitude,
-          ts: DateTime.now().toUtc(),
+          ts: pos.timestamp.toUtc(), // when the fix was taken
           accuracy: pos.accuracy,
         );
       }
@@ -357,6 +358,10 @@ void onStart(ServiceInstance service) async {
             title: 'Cairn', content: strategy.label);
       } catch (_) {/* best-effort */}
     }
+    // This isolate's history switch starts off; follow the user's consent.
+    try {
+      await HistoryPolicy.refreshForBackground();
+    } catch (_) {/* keep last tick's setting */}
     await publishOnce(strategy.accuracy);
     await checkGeofencesOnce();
     // Content-free activity alerts (new pairing, contact went quiet) while the

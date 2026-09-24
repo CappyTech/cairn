@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
@@ -8,6 +9,7 @@ import '../services/nickname_service.dart';
 import '../services/pairing_service.dart';
 import '../services/places_service.dart';
 import '../services/prefs.dart';
+import '../services/road_snap_service.dart';
 import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
 import 'places_screen.dart';
@@ -19,9 +21,11 @@ class _Subject {
   const _Subject(this.id, this.name);
 }
 
-/// History: pick a person and a day to see where they've been — the
-/// breadcrumb path on the map, a scrubbable slider, and a timeline of where
-/// they stayed and how they moved between those stays. All from locations already end-to-end encrypted to me.
+/// History: pick a person and a day to see where they've been — the day's
+/// trips on the map (coloured by speed, with direction arrows and numbered
+/// stops), a time scrubber, and a timeline of stays, trips and gaps in the
+/// data. Tap a trip to focus it (and optionally snap it to roads). All from
+/// locations already end-to-end encrypted to me.
 class HistoryScreen extends StatefulWidget {
   /// Optionally open straight to a given subject (e.g. from a contact tile).
   final String? initialSubjectId;
@@ -43,8 +47,12 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   List<HistoryPoint> _points = [];
   List<TimelineEntry> _timeline = [];
-  int _scrub = 0;
+  DateTime? _t; // the scrubber's time
+  int? _selected; // index into _timeline of the focused trip (a Move)
+  final Map<int, List<LatLng>> _snapped = {}; // road-snapped trips, by index
+  bool _snapping = false;
   bool _loading = true;
+  int _loadGen = 0; // drops a day's load that finished after a newer one
 
   @override
   void initState() {
@@ -112,33 +120,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   Future<void> _loadDay() async {
+    final gen = ++_loadGen;
     setState(() => _loading = true);
-    final pts = _day == null
+    final raw = _day == null
         ? <HistoryPoint>[]
         : await _safe(HistoryService.loadDay(_subjectId!, _day!), <HistoryPoint>[]);
-    final timeline = HistoryTimeline.build(pts, _places);
-    if (!mounted) return;
+    if (!mounted || gen != _loadGen) return;
+    final pts = HistoryTimeline.usable(raw);
     setState(() {
       _points = pts;
-      _timeline = timeline;
-      _scrub = pts.isEmpty ? 0 : pts.length - 1;
+      _timeline = HistoryTimeline.build(pts, _places);
+      _t = pts.isEmpty ? null : pts.last.t;
+      _selected = null;
+      _snapped.clear();
       _loading = false;
     });
-    _fitToPoints();
+    _fitTo([for (final p in pts) LatLng(p.lat, p.lng)], 48);
   }
 
-  void _fitToPoints() {
-    if (_points.isEmpty) return;
-    final coords = [for (final p in _points) LatLng(p.lat, p.lng)];
+  /// Frame [coords] (after the next frame, once the map has its size).
+  void _fitTo(List<LatLng> coords, double padding) {
+    if (coords.isEmpty) return;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       try {
-        if (coords.length == 1) {
+        final spread = coords.any((c) => c != coords.first);
+        if (!spread) {
           _map.move(coords.first, 15);
         } else {
           _map.fitCamera(CameraFit.coordinates(
             coordinates: coords,
-            padding: const EdgeInsets.all(48),
+            padding: EdgeInsets.all(padding),
+            maxZoom: 17,
           ));
         }
       } catch (_) {}
@@ -193,6 +206,30 @@ class _HistoryScreenState extends State<HistoryScreen> {
     final m = d.inMinutes % 60;
     return m == 0 ? '${h}h' : '${h}h ${m}m';
   }
+
+  static String _kmh(double mps) => '${(mps * 3.6).round()} km/h';
+
+  // ---- travel modes ----
+  static Color _modeColor(TravelMode m) => switch (m) {
+        TravelMode.walk => Brand.lichen,
+        TravelMode.cycle => const Color(0xFFD9A441),
+        TravelMode.vehicle => const Color(0xFF4A86C5),
+      };
+
+  static IconData _modeIcon(TravelMode m) => switch (m) {
+        TravelMode.walk => Icons.directions_walk,
+        TravelMode.cycle => Icons.directions_bike,
+        TravelMode.vehicle => Icons.directions_car,
+      };
+
+  static String _modeName(TravelMode m) => switch (m) {
+        TravelMode.walk => 'Walk',
+        TravelMode.cycle => 'Cycle',
+        TravelMode.vehicle => 'Vehicle',
+      };
+
+  /// The timeline's stays, in order — their position is the stop's number.
+  List<Stay> get _stays => _timeline.whereType<Stay>().toList();
 
   @override
   Widget build(BuildContext context) {
@@ -335,6 +372,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
           options: const MapOptions(
             initialCenter: LatLng(51.5074, -0.1278),
             initialZoom: 12,
+            // North stays up so the direction arrows read true.
+            interactionOptions: InteractionOptions(
+                flags: InteractiveFlag.all & ~InteractiveFlag.rotate),
           ),
           children: [
             TileLayer(
@@ -355,14 +395,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   borderStrokeWidth: 1,
                 ),
             ]),
-            if (_points.length > 1)
-              PolylineLayer(polylines: [
-                Polyline(
-                  points: [for (final p in _points) LatLng(p.lat, p.lng)],
-                  strokeWidth: 4,
-                  color: Brand.slate.withValues(alpha: 0.7),
-                ),
-              ]),
+            PolylineLayer(polylines: _lines()),
+            MarkerLayer(markers: _arrowMarkers()),
             MarkerLayer(markers: _mapMarkers()),
           ],
         ),
@@ -388,27 +422,125 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
+  /// Every trip coloured by speed (or its road-snapped line), and a dashed
+  /// straight line across each gap in the data. With a trip focused, the rest
+  /// fade back and the focused one is drawn on top.
+  List<Polyline> _lines() {
+    final dimmed = <Polyline>[];
+    final lit = <Polyline>[];
+    for (var i = 0; i < _timeline.length; i++) {
+      final e = _timeline[i];
+      final dim = _selected != null && _selected != i;
+      final into = dim ? dimmed : lit;
+      final alpha = dim ? 0.25 : 0.95;
+      switch (e) {
+        case Move():
+          final snapped = _snapped[i];
+          if (snapped != null) {
+            into.add(_line(snapped, _modeColor(e.mode), alpha));
+          } else {
+            for (final run in HistoryTimeline.speedRuns(e.path)) {
+              into.add(_line([for (final p in run.points) LatLng(p.lat, p.lng)],
+                  _modeColor(run.mode), alpha));
+            }
+          }
+        case Gap():
+          into.add(Polyline(
+            points: [LatLng(e.fromLat, e.fromLng), LatLng(e.toLat, e.toLng)],
+            strokeWidth: 3,
+            color: context.cairn.muted.withValues(alpha: dim ? 0.25 : 0.8),
+            pattern: StrokePattern.dashed(segments: const [10, 8]),
+          ));
+        case Stay():
+          break;
+      }
+    }
+    return [...dimmed, ...lit];
+  }
+
+  Polyline _line(List<LatLng> pts, Color color, double alpha) => Polyline(
+        points: pts,
+        strokeWidth: 5,
+        color: color.withValues(alpha: alpha),
+        borderStrokeWidth: 1.5,
+        borderColor: Colors.white.withValues(alpha: alpha * 0.8),
+      );
+
+  /// Direction arrows along each (non-faded) trip.
+  List<Marker> _arrowMarkers() {
+    final markers = <Marker>[];
+    for (var i = 0; i < _timeline.length; i++) {
+      final e = _timeline[i];
+      if (e is! Move || (_selected != null && _selected != i)) continue;
+      final snapped = _snapped[i];
+      final path = snapped == null
+          ? e.path
+          : [for (final c in snapped) HistoryPoint(c.latitude, c.longitude, e.start)];
+      for (final a in HistoryTimeline.arrows(path)) {
+        markers.add(Marker(
+          point: LatLng(a.lat, a.lng),
+          width: 16,
+          height: 16,
+          child: Transform.rotate(
+            angle: a.bearing * math.pi / 180,
+            child: const Icon(Icons.navigation, size: 14, color: Colors.white,
+                shadows: [Shadow(blurRadius: 2, color: Colors.black54)]),
+          ),
+        ));
+      }
+    }
+    return markers;
+  }
+
   List<Marker> _mapMarkers() {
     final markers = <Marker>[];
     if (_points.isEmpty) return markers;
-    // Start (green) and end (red) of the day's trail.
-    markers.add(_dot(_points.first, Colors.green, 'Start'));
-    markers.add(_dot(_points.last, Colors.redAccent, 'End'));
+    // Where the trail starts/ends when that's mid-journey (a stop has its own
+    // numbered marker).
+    if (_timeline.isNotEmpty && _timeline.first is! Stay) {
+      markers.add(_dot(_points.first, Colors.green));
+    }
+    if (_timeline.isNotEmpty && _timeline.last is! Stay) {
+      markers.add(_dot(_points.last, Colors.redAccent));
+    }
+    // Numbered stops.
+    final stays = _stays;
+    for (var n = 0; n < stays.length; n++) {
+      markers.add(Marker(
+        point: LatLng(stays[n].lat, stays[n].lng),
+        width: 26,
+        height: 26,
+        child: _stopBadge(n + 1),
+      ));
+    }
     // The scrubber's current position.
-    if (_scrub >= 0 && _scrub < _points.length) {
-      final p = _points[_scrub];
+    final t = _t;
+    if (t != null) {
+      final pos = HistoryTimeline.positionAt(_points, t);
       // The dot sits exactly on the point; the time label floats above it.
       markers.add(Marker(
-        point: LatLng(p.lat, p.lng),
-        width: 120,
+        point: LatLng(pos.lat, pos.lng),
+        width: 160,
         height: 64,
         child: Stack(
           alignment: Alignment.center,
           clipBehavior: Clip.none,
           children: [
-            Icon(Icons.circle, size: 14, color: context.cairn.ink),
+            Container(
+              width: 16,
+              height: 16,
+              decoration: BoxDecoration(
+                color: pos.known ? Brand.slate : Colors.white,
+                shape: BoxShape.circle,
+                border: Border.all(
+                    color: pos.known ? Colors.white : Brand.stone, width: 3),
+                boxShadow: const [
+                  BoxShadow(blurRadius: 3, color: Colors.black38)
+                ],
+              ),
+            ),
             Transform.translate(
-              offset: const Offset(0, -20),
+              offset: const Offset(0, -22),
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -419,7 +551,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                     BoxShadow(blurRadius: 3, color: Colors.black26)
                   ],
                 ),
-                child: Text(_hm(p.t),
+                child: Text(pos.known ? _hm(t) : '${_hm(t)} · no data',
                     style: const TextStyle(
                         fontSize: 11,
                         color: Brand.slate,
@@ -433,10 +565,27 @@ class _HistoryScreenState extends State<HistoryScreen> {
     return markers;
   }
 
-  Marker _dot(HistoryPoint p, Color color, String label) => Marker(
+  Widget _stopBadge(int n, {double size = 26}) => Container(
+        width: size,
+        height: size,
+        alignment: Alignment.center,
+        decoration: BoxDecoration(
+          color: Brand.slate,
+          shape: BoxShape.circle,
+          border: Border.all(color: Colors.white, width: 2),
+          boxShadow: const [BoxShadow(blurRadius: 3, color: Colors.black38)],
+        ),
+        child: Text('$n',
+            style: TextStyle(
+                color: Colors.white,
+                fontSize: size * 0.45,
+                fontWeight: FontWeight.w700)),
+      );
+
+  Marker _dot(HistoryPoint p, Color color) => Marker(
         point: LatLng(p.lat, p.lng),
-        width: 18,
-        height: 18,
+        width: 16,
+        height: 16,
         child: Container(
           decoration: BoxDecoration(
             color: color,
@@ -446,33 +595,56 @@ class _HistoryScreenState extends State<HistoryScreen> {
         ),
       );
 
+  /// The scrubber's range: the focused trip, else the whole day.
+  (DateTime, DateTime) get _range {
+    final sel = _selected;
+    if (sel != null) return (_timeline[sel].start, _timeline[sel].end);
+    return (_points.first.t, _points.last.t);
+  }
+
+  /// A time slider (not a point slider): an hour takes the same room whether
+  /// it has one fix or a hundred, and dragging through a gap says so.
   Widget _scrubber() {
-    final p = _points[_scrub.clamp(0, _points.length - 1)];
+    final (start, end) = _range;
+    final total = end.difference(start).inSeconds;
+    if (total <= 0) return const SizedBox.shrink();
+    final t = _t ?? end;
+    final at = t.difference(start).inSeconds.clamp(0, total);
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 12),
       child: Row(
         children: [
-          Text(_hm(_points.first.t),
+          Text(_hm(start),
               style: TextStyle(fontSize: 11, color: context.cairn.muted)),
           Expanded(
             child: Slider(
-              value: _scrub.toDouble(),
+              value: at.toDouble(),
               min: 0,
-              max: (_points.length - 1).toDouble(),
-              label: _hm(p.t),
+              max: total.toDouble(),
+              label: _hm(t),
               onChanged: (v) {
-                setState(() => _scrub = v.round());
-                try {
-                  _map.move(LatLng(p.lat, p.lng), _map.camera.zoom);
-                } catch (_) {}
+                final nt = start.add(Duration(seconds: v.round()));
+                setState(() => _t = nt);
+                _keepInView(nt);
               },
             ),
           ),
-          Text(_hm(_points.last.t),
+          Text(_hm(end),
               style: TextStyle(fontSize: 11, color: context.cairn.muted)),
         ],
       ),
     );
+  }
+
+  /// Pan (without zooming) if the scrubbed position has left the screen.
+  void _keepInView(DateTime t) {
+    final pos = HistoryTimeline.positionAt(_points, t);
+    final ll = LatLng(pos.lat, pos.lng);
+    try {
+      if (!_map.camera.visibleBounds.contains(ll)) {
+        _map.move(ll, _map.camera.zoom);
+      }
+    } catch (_) {}
   }
 
   /// Summary, scrubber and the day's timeline, sized to its content (capped)
@@ -487,7 +659,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            _summary(),
+            if (_selected != null) _selectedBar() else _summary(),
             if (_points.length > 1) _scrubber(),
             const Divider(height: 1),
             ConstrainedBox(
@@ -496,7 +668,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                 shrinkWrap: true,
                 padding: const EdgeInsets.symmetric(vertical: 4),
                 itemCount: _timeline.length,
-                itemBuilder: (context, i) => _timelineTile(_timeline[i]),
+                itemBuilder: (context, i) => _timelineTile(i),
               ),
             ),
           ],
@@ -505,29 +677,104 @@ class _HistoryScreenState extends State<HistoryScreen> {
     );
   }
 
-  /// One line: stops · distance · time span (or a single sighting).
+  /// One line: stops · distance travelled · time span (or a single sighting),
+  /// then a key to the line colours.
   Widget _summary() {
     final String text;
     if (_points.length == 1) {
       text = '1 location · seen at ${_hm(_points.first.t)}';
     } else {
-      final stops = _timeline.whereType<Stay>().length;
-      final dist = HistoryTimeline.pathLength(_points);
+      final stops = _stays.length;
       text = [
         '$stops ${stops == 1 ? 'stop' : 'stops'}',
-        _dist(dist),
+        _dist(HistoryTimeline.travelledMeters(_timeline)),
         _span(_points.first.t, _points.last.t),
       ].join(' · ');
     }
+    final modes = {
+      for (final m in _timeline.whereType<Move>())
+        for (final r in HistoryTimeline.speedRuns(m.path)) r.mode
+    };
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 10, 16, 2),
-      child: Text(text,
-          style: TextStyle(
-              color: context.cairn.ink, fontWeight: FontWeight.w600, fontSize: 13)),
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 4,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text(text,
+              style: TextStyle(
+                  color: context.cairn.ink,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13)),
+          for (final m in TravelMode.values)
+            if (modes.contains(m))
+              Row(mainAxisSize: MainAxisSize.min, children: [
+                Container(
+                    width: 14,
+                    height: 4,
+                    decoration: BoxDecoration(
+                        color: _modeColor(m),
+                        borderRadius: BorderRadius.circular(2))),
+                const SizedBox(width: 4),
+                Text(_modeName(m),
+                    style:
+                        TextStyle(fontSize: 11, color: context.cairn.muted)),
+              ]),
+        ],
+      ),
     );
   }
 
-  Widget _timelineTile(TimelineEntry e) {
+  /// Header while a trip is focused: what it is, snap-to-roads, and a way out.
+  Widget _selectedBar() {
+    final i = _selected!;
+    final m = _timeline[i] as Move;
+    final snapped = _snapped.containsKey(i);
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 4, 4, 0),
+      child: Row(
+        children: [
+          Icon(_modeIcon(m.mode), size: 18, color: _modeColor(m.mode)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '${_dist(m.distanceMeters)} · ${_span(m.start, m.end)}',
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(
+                  color: context.cairn.ink,
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13),
+            ),
+          ),
+          if (_snapping)
+            const Padding(
+              padding: EdgeInsets.all(12),
+              child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            )
+          else
+            TextButton.icon(
+              icon: Icon(snapped ? Icons.timeline : Icons.alt_route, size: 18),
+              label: Text(snapped ? 'Show fixes' : 'Snap to roads'),
+              onPressed: () => snapped
+                  ? setState(() => _snapped.remove(i))
+                  : _snap(i, m),
+            ),
+          IconButton(
+            tooltip: 'Show the whole day',
+            icon: const Icon(Icons.close),
+            onPressed: _clearSelection,
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _timelineTile(int i) {
+    final e = _timeline[i];
     switch (e) {
       case Stay():
         final named = e.place != null;
@@ -535,13 +782,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
             named ? null : HistoryTimeline.pinNear(_pins, e.lat, e.lng);
         return ListTile(
           dense: true,
-          leading: Icon(
-              named
-                  ? Icons.place
-                  : pin != null
-                      ? Icons.push_pin_outlined
-                      : Icons.place_outlined,
-              ),
+          leading: SizedBox(
+              width: 24,
+              child: Center(
+                  child: _stopBadge(_stays.indexOf(e) + 1, size: 22))),
           title: Text(e.place?.name ?? pin?.name ?? 'Stopped',
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(e.duration.inMinutes < 1
@@ -559,26 +803,124 @@ class _HistoryScreenState extends State<HistoryScreen> {
       case Move():
         return ListTile(
           dense: true,
-          leading: Icon(Icons.route, color: context.cairn.ink),
-          title: Text('Travelled ${_dist(e.distanceMeters)}'),
-          subtitle:
-              Text('${_span(e.start, e.end)} · ${_dur(e.duration)}'),
-          onTap: () => _focusMove(e),
+          selected: _selected == i,
+          leading: Icon(_modeIcon(e.mode), color: _modeColor(e.mode)),
+          title: Text('${_modeName(e.mode)} · ${_dist(e.distanceMeters)}'),
+          subtitle: Text([
+            _span(e.start, e.end),
+            _dur(e.duration),
+            if (e.duration.inSeconds > 0) 'avg ${_kmh(e.avgSpeedMps)}',
+          ].join(' · ')),
+          onTap: () => _selected == i ? _clearSelection() : _focusMove(i, e),
+        );
+      case Gap():
+        final apart = e.distanceMeters > HistoryTimeline.stayRadiusMeters;
+        return ListTile(
+          dense: true,
+          leading:
+              Icon(Icons.location_off_outlined, color: context.cairn.muted),
+          title: Text('No location data',
+              style: TextStyle(color: context.cairn.muted)),
+          subtitle: Text([
+            _span(e.start, e.end),
+            _dur(e.duration),
+            if (apart) '${_dist(e.distanceMeters)} apart',
+          ].join(' · ')),
+          onTap: () => _focusGap(e),
         );
     }
   }
 
-  /// Snap the scrubber to the first point at/after [t].
-  void _scrubTo(DateTime t) {
-    final idx = _points.indexWhere((p) => !p.t.isBefore(t));
-    if (idx >= 0) setState(() => _scrub = idx);
-  }
-
   void _focusStay(Stay s) {
-    _scrubTo(s.start);
+    setState(() {
+      _selected = null;
+      _t = s.start;
+    });
     try {
       _map.move(LatLng(s.lat, s.lng), 16);
     } catch (_) {}
+  }
+
+  /// Focus one trip: fade the rest, scrub within it, and frame its path.
+  void _focusMove(int i, Move m) {
+    setState(() {
+      _selected = i;
+      _t = m.start;
+    });
+    _fitTo(_snapped[i] ?? [for (final p in m.path) LatLng(p.lat, p.lng)], 60);
+  }
+
+  void _focusGap(Gap g) {
+    setState(() {
+      _selected = null;
+      _t = g.start;
+    });
+    _fitTo([LatLng(g.fromLat, g.fromLng), LatLng(g.toLat, g.toLng)], 60);
+  }
+
+  void _clearSelection() {
+    setState(() => _selected = null);
+    _fitTo([for (final p in _points) LatLng(p.lat, p.lng)], 48);
+  }
+
+  /// Snap a trip to roads — after the user agrees to send its coordinates to
+  /// the routing server (once, or every time).
+  Future<void> _snap(int i, Move m) async {
+    if (!await Prefs.roadSnapAllowed()) {
+      if (!mounted || await _askSnap() != true) return;
+    }
+    setState(() => _snapping = true);
+    final line = await RoadSnapService.snap(m);
+    if (!mounted) return;
+    setState(() {
+      _snapping = false;
+      if (line != null && _selected == i) _snapped[i] = line;
+    });
+    if (line == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Couldn't snap this trip to roads. Try again later.")));
+    }
+  }
+
+  Future<bool?> _askSnap() {
+    var always = false;
+    return showDialog<bool>(
+      context: context,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setDialog) => AlertDialog(
+          title: const Text('Snap to roads?'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text(
+                  'This sends this trip\'s coordinates — not who you are or '
+                  'who it is — to ${RoadSnapService.host}, a public routing '
+                  'server, unencrypted. Everything else in History stays on '
+                  'your devices.'),
+              const SizedBox(height: 8),
+              CheckboxListTile(
+                contentPadding: EdgeInsets.zero,
+                value: always,
+                onChanged: (v) => setDialog(() => always = v ?? false),
+                title: const Text("Don't ask again"),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context, false),
+                child: const Text('Cancel')),
+            FilledButton(
+                onPressed: () async {
+                  if (always) await Prefs.setRoadSnapAllowed(true);
+                  if (context.mounted) Navigator.pop(context, true);
+                },
+                child: const Text('Snap')),
+          ],
+        ),
+      ),
+    );
   }
 
   /// Open the place editor at an unnamed stop; once saved, re-derive the
@@ -592,28 +934,18 @@ class _HistoryScreenState extends State<HistoryScreen> {
     if (saved != true || !mounted) return;
     _places = await _safe(PlacesService.list(), _places);
     if (!mounted) return;
-    setState(() => _timeline = HistoryTimeline.build(_points, _places));
-  }
-
-  void _focusMove(Move m) {
-    // Snap the scrubber to the move's start and frame its path.
-    _scrubTo(m.start);
-    final coords = [for (final p in m.path) LatLng(p.lat, p.lng)];
-    if (coords.isEmpty) return;
-    try {
-      if (coords.length == 1) {
-        _map.move(coords.first, 15);
-      } else {
-        _map.fitCamera(CameraFit.coordinates(
-            coordinates: coords, padding: const EdgeInsets.all(60)));
-      }
-    } catch (_) {}
+    setState(() {
+      _timeline = HistoryTimeline.build(_points, _places);
+      _selected = null; // indices may have shifted
+      _snapped.clear();
+    });
   }
 
   /// Let the user keep *less* history than the server does. Options are capped
   /// by the server's own policy (you can't keep more than it stores).
   Future<void> _retentionSettings() async {
     final current = await Prefs.historyLocalRetentionDays();
+    final snapAllowed = await Prefs.roadSnapAllowed();
     final serverDays = HistoryPolicy.serverDays;
     // null = follow server; 0 = keep all (only offered if the server keeps all).
     final options = <({String label, int? value})>[
@@ -649,6 +981,16 @@ class _HistoryScreenState extends State<HistoryScreen> {
               ),
               title: Text(o.label),
               onTap: () => Navigator.pop(context, o),
+            ),
+          if (snapAllowed)
+            ListTile(
+              leading: const Icon(Icons.alt_route),
+              title: const Text('Ask before snapping trips to roads'),
+              subtitle: const Text('You chose not to be asked'),
+              onTap: () async {
+                await Prefs.setRoadSnapAllowed(false);
+                if (context.mounted) Navigator.pop(context);
+              },
             ),
         ],
       ),

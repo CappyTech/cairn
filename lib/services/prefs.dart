@@ -49,6 +49,14 @@ class Prefs {
   static Future<void> setApproxOnly(bool v) async =>
       _s.write(key: 'approx_only', value: v ? '1' : '0');
 
+  /// The user agreed to send a trip's coordinates to a public routing server
+  /// to snap it to roads in History, without being asked each time.
+  static Future<bool> roadSnapAllowed() async =>
+      (await _s.read(key: 'road_snap_allowed')) == '1';
+
+  static Future<void> setRoadSnapAllowed(bool v) async =>
+      _s.write(key: 'road_snap_allowed', value: v ? '1' : '0');
+
   /// Whether first-run onboarding has been completed on this device.
   static Future<bool> onboardingDone() async =>
       (await _s.read(key: 'onboarding_done')) == '1';
