@@ -8,8 +8,11 @@ import 'package:flutter_map/flutter_map.dart';
 import 'package:latlong2/latlong.dart';
 import 'package:pocketbase/pocketbase.dart';
 import '../services/background_share.dart';
+import '../services/compass_service.dart';
 import '../services/foreground_share.dart';
 import '../services/location_sharing_service.dart';
+import '../services/motion.dart';
+import '../services/motion_settings.dart';
 import '../services/nickname_service.dart';
 import '../services/notification_service.dart';
 import '../services/pairing_service.dart';
@@ -20,6 +23,7 @@ import '../services/shared_places_service.dart';
 import '../services/stale_alert_store.dart';
 import '../widgets/background_share_ux.dart';
 import '../widgets/contact_picker.dart';
+import '../widgets/motion_settings_tiles.dart';
 import '../theme/brand.dart';
 import 'history_screen.dart';
 import 'places_screen.dart';
@@ -51,7 +55,8 @@ class _MapScreenState extends State<MapScreen> {
   final _share = ForegroundShare.instance;
   LatLng? _me;
   bool _centred = false; // snapped to my first fix yet?
-  double? _heading; // GPS course to point my direction cone at; null = hide it
+  MotionSettings _motion = MotionSettings.current.value;
+  bool _compassHeld = false; // holding a CompassService handle?
   bool _follow = false; // keep the map centred on me as I move
   Map<String, ContactLocation> _contacts = {};
   List<Place> _places = [];
@@ -90,12 +95,13 @@ class _MapScreenState extends State<MapScreen> {
     final p = _share.position.value;
     if (p != null) {
       _me = LatLng(p.latitude, p.longitude);
-      _heading = coneHeading(speed: p.speed, heading: p.heading);
       _centred = true; // the map's initialCenter already uses it
     }
     _share.position.addListener(_onPosition);
     _share.error.addListener(_onShareError);
     widget.focus?.addListener(_onFocus);
+    MotionSettings.current.addListener(_onMotionSettings);
+    _syncCompass();
 
     // Staleness is time-based, so re-evaluate on a timer (not just on
     // incoming shares) to catch a contact who simply stopped sharing — and
@@ -122,10 +128,7 @@ class _MapScreenState extends State<MapScreen> {
   void _onPosition() {
     final p = _share.position.value;
     if (p == null || !mounted) return; // moving a disposed controller throws
-    setState(() {
-      _me = LatLng(p.latitude, p.longitude);
-      _heading = coneHeading(speed: p.speed, heading: p.heading);
-    });
+    setState(() => _me = LatLng(p.latitude, p.longitude));
     if (!_centred) {
       _centred = true;
       _map.move(_me!, 14);
@@ -138,6 +141,45 @@ class _MapScreenState extends State<MapScreen> {
   void _onShareError() {
     if (mounted) setState(() {});
   }
+
+  void _onMotionSettings() {
+    if (!mounted) return;
+    setState(() => _motion = MotionSettings.current.value);
+    _syncCompass();
+  }
+
+  /// Run the compass only while it's wanted (my cone on + "use compass").
+  void _syncCompass() {
+    final want = _motion.wantsCompass;
+    if (want == _compassHeld) return;
+    _compassHeld = want;
+    want ? CompassService.acquire() : CompassService.release();
+  }
+
+  /// My GNSS course, if my latest fix is fresh and I'm moving; else null.
+  double? get _course {
+    final p = _share.position.value;
+    if (p == null || !Motion.isFresh(p.timestamp, DateTime.now())) return null;
+    return Motion.course(
+        speed: p.speed, heading: p.heading, headingAccuracy: p.headingAccuracy);
+  }
+
+  /// My current speed if it's fresh and trustworthy; else null.
+  double? get _speed {
+    final p = _share.position.value;
+    if (p == null || !Motion.isFresh(p.timestamp, DateTime.now())) return null;
+    return Motion.trustedSpeed(p.speed, p.speedAccuracy);
+  }
+
+  /// Where my cone points: the course while moving, else (if enabled) the
+  /// compass. Null = no cone.
+  double? _myHeading(double? compass) => _motion.showMyHeading
+      ? Motion.blend(
+          course: _course, compass: compass, useCompass: _motion.useCompass)
+      : null;
+
+  static final bool _mph = Motion.usesMph(
+      WidgetsBinding.instance.platformDispatcher.locale.countryCode);
 
   /// Centre on the contact named by [MapScreen.focus], if they're sharing.
   void _onFocus() {
@@ -180,6 +222,8 @@ class _MapScreenState extends State<MapScreen> {
     _share.position.removeListener(_onPosition);
     _share.error.removeListener(_onShareError);
     widget.focus?.removeListener(_onFocus);
+    MotionSettings.current.removeListener(_onMotionSettings);
+    if (_compassHeld) CompassService.release();
     _staleTimer?.cancel();
     _unsub?.call();
     super.dispose();
@@ -288,8 +332,29 @@ class _MapScreenState extends State<MapScreen> {
           ),
       ];
 
+  /// A contact's shared motion worth drawing: only if I've chosen to see it
+  /// and their share is recent. Either field may be null.
+  ({double? speed, double? heading}) _contactMotion(ContactLocation c) =>
+      _motion.showContactsMotion &&
+              Motion.contactMotionFresh(c.updated, DateTime.now())
+          ? (speed: c.speed, heading: c.heading)
+          : (speed: null, heading: null);
+
   List<Marker> _markers() {
     final markers = <Marker>[];
+    // Contacts' direction cones first, so their pins draw on top.
+    for (final c in _contacts.values) {
+      final heading = _contactMotion(c).heading;
+      if (heading == null) continue;
+      // Longer than my own (radius 48 vs 28) so it reaches past the 36 dp
+      // pin drawn over it when they're heading north.
+      markers.add(Marker(
+        point: LatLng(c.lat, c.lng),
+        width: 96,
+        height: 96,
+        child: IgnorePointer(child: _cone(heading, size: 96)),
+      ));
+    }
     for (final c in _contacts.values) {
       final pres = Presence.describe(updated: c.updated, now: DateTime.now());
       final color = _presenceColor(pres.level);
@@ -298,8 +363,12 @@ class _MapScreenState extends State<MapScreen> {
       // they're inside one of MY places, note that ("at Home").
       final at = PlacesService.placeContaining(_places, c.lat, c.lng);
       final where = c.label ?? (at != null ? 'at ${at.name}' : null);
-      final label =
-          where != null ? '$presenceLabel · $where' : presenceLabel;
+      final speed = _contactMotion(c).speed;
+      final label = [
+        presenceLabel,
+        ?where,
+        if (speed != null && speed >= 0.3) Motion.formatSpeed(speed, mph: _mph),
+      ].join(' · ');
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
         width: 190,
@@ -310,6 +379,9 @@ class _MapScreenState extends State<MapScreen> {
           onTap: () => _openContactSheet(c),
           child: Column(
           mainAxisSize: MainAxisSize.min,
+          // Pin at the bottom of the box, so its tip sits on the actual
+          // position (and on the direction cone's apex), not above it.
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
             // Name + freshness chip, on-brand: slate text on a soft card.
             Container(
@@ -369,28 +441,33 @@ class _MapScreenState extends State<MapScreen> {
     return markers;
   }
 
-  /// This device's own position: the dot, plus a direction cone fanning out in
-  /// the way I'm heading when there's a live GPS course (i.e. while moving).
-  Widget _meMarker() {
-    final heading = _heading;
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        if (heading != null)
-          Transform.rotate(
-            // GPS heading is degrees clockwise from north; the cone is drawn
-            // pointing up (north), so rotating it clockwise by the heading
-            // aims it correctly on this north-up map.
-            angle: heading * math.pi / 180,
-            child: const CustomPaint(
-              size: Size(56, 56),
-              painter: _HeadingConePainter(),
-            ),
-          ),
-        _meDot(),
-      ],
-    );
-  }
+  /// This device's own position: the dot, plus a direction cone — the GPS
+  /// course while moving, else the compass (per the motion settings). Rebuilt
+  /// on compass ticks alone, not the whole map.
+  Widget _meMarker() => ValueListenableBuilder<double?>(
+        valueListenable: CompassService.heading,
+        builder: (context, compass, _) {
+          final heading = _myHeading(compass);
+          return Stack(
+            alignment: Alignment.center,
+            children: [
+              if (heading != null) _cone(heading, size: 56),
+              _meDot(),
+            ],
+          );
+        },
+      );
+
+  /// A direction cone aimed at [heading]. Headings are degrees clockwise from
+  /// north; the cone is drawn pointing up (north), so rotating it clockwise by
+  /// the heading aims it correctly on this north-up map.
+  Widget _cone(double heading, {required double size}) => Transform.rotate(
+        angle: heading * math.pi / 180,
+        child: CustomPaint(
+          size: Size(size, size),
+          painter: const _HeadingConePainter(),
+        ),
+      );
 
   /// This device's own position: a slate dot with a white ring — a calm,
   /// on-brand take on the familiar "you are here" marker.
@@ -483,6 +560,25 @@ class _MapScreenState extends State<MapScreen> {
               child: _LocatingChip(),
             ),
           ),
+        ),
+      // The compass is pointing my cone but reports poor calibration.
+      if (_me != null && _motion.wantsCompass)
+        ValueListenableBuilder<bool>(
+          valueListenable: CompassService.needsCalibration,
+          builder: (context, poor, _) => !poor || _course != null
+              ? const SizedBox.shrink()
+              : const SafeArea(
+                  child: Align(
+                    alignment: Alignment.topCenter,
+                    child: Padding(
+                      padding: EdgeInsets.only(top: 8),
+                      child: _HintChip(
+                        icon: Icons.screen_rotation_alt,
+                        text: 'Compass unsure — wave your phone in a figure-of-8',
+                      ),
+                    ),
+                  ),
+                ),
         ),
       if (_error != null)
         Center(
@@ -723,6 +819,10 @@ class _MapScreenState extends State<MapScreen> {
                       ?where,
                       if (distance != null) _formatDistance(distance),
                       if (c.approximate) 'approximate',
+                      if (_contactMotion(c).speed case final s?)
+                        Motion.formatSpeed(s, mph: _mph),
+                      if (_contactMotion(c).heading case final h?)
+                        'heading ${Motion.compassPoint(h)}',
                     ].join(' · '),
                     style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),
@@ -830,6 +930,28 @@ class _MapScreenState extends State<MapScreen> {
                 const Text('You',
                     style:
                         TextStyle(fontSize: 18, fontWeight: FontWeight.w600)),
+                // What the device reads right now — local, for my eyes.
+                ValueListenableBuilder<double?>(
+                  valueListenable: CompassService.heading,
+                  builder: (context, compass, _) {
+                    final course = _course;
+                    final facing = course ?? compass;
+                    final parts = [
+                      if (_speed case final s?)
+                        Motion.formatSpeed(s, mph: _mph),
+                      if (facing != null)
+                        '${course != null ? 'heading' : 'facing'} '
+                            '${Motion.compassPoint(facing)}',
+                    ];
+                    if (parts.isEmpty) return const SizedBox.shrink();
+                    return Padding(
+                      padding: const EdgeInsets.only(top: 4),
+                      child: Text(parts.join(' · '),
+                          style: TextStyle(
+                              color: context.cairn.muted, fontSize: 13)),
+                    );
+                  },
+                ),
                 const SizedBox(height: 12),
                 ListTile(
                   contentPadding: EdgeInsets.zero,
@@ -873,6 +995,7 @@ class _MapScreenState extends State<MapScreen> {
                       if (ctx.mounted) setSheet(() => bgEnabled = now);
                     },
                   ),
+                const MotionSettingsTiles(dense: true),
               ],
             ),
           ),
@@ -948,21 +1071,6 @@ List<LatLng> fitTargets({LatLng? me, required Iterable<LatLng> contacts}) => [
       ...contacts,
     ];
 
-/// The GPS course to draw my direction cone at, or null when we shouldn't show
-/// one. The course from geolocator is course-over-ground, not a compass, so
-/// it's only meaningful while actually moving; when still (or when the device
-/// reports no fix on heading) it comes through as -1 / NaN or with ~zero
-/// speed. Pure and side-effect-free, so the gate is unit-tested.
-double? coneHeading({
-  required double speed,
-  required double heading,
-  double minSpeed = 0.5, // m/s ≈ a slow walk
-}) {
-  if (speed.isNaN || speed < minSpeed) return null;
-  if (heading.isNaN || heading < 0 || heading > 360) return null;
-  return heading;
-}
-
 /// A soft wedge fanning "up" (north) from the centre, faded out at its far
 /// edge — rotated by the caller to point along the heading. On-brand slate,
 /// low alpha so it reads as a hint, not a hard shape.
@@ -995,6 +1103,39 @@ class _HeadingConePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(_HeadingConePainter oldDelegate) => false;
+}
+
+/// A small informational pill (same look as [_LocatingChip]) with an icon.
+class _HintChip extends StatelessWidget {
+  final IconData icon;
+  final String text;
+  const _HintChip({required this.icon, required this.text});
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      color: Colors.white,
+      elevation: 2,
+      borderRadius: BorderRadius.circular(20),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(icon, size: 14, color: Brand.slate),
+            const SizedBox(width: 8),
+            Flexible(
+              child: Text(text,
+                  style: const TextStyle(
+                      fontSize: 12,
+                      color: Brand.slate,
+                      fontWeight: FontWeight.w500)),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// A small, unobtrusive pill shown while we're still acquiring this device's

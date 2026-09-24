@@ -7,6 +7,7 @@ import 'services/background_share.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'services/crypto_service.dart';
+import 'services/motion_settings.dart';
 import 'services/prefs.dart';
 import 'widgets/update_gate.dart';
 import 'widgets/restart_widget.dart';
@@ -16,6 +17,9 @@ import 'theme/brand.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await initPocketBase();
+  try {
+    await MotionSettings.load(); // defaults stand if storage is unreadable
+  } catch (_) {}
   // Background sharing is mobile-only; ignore where unsupported (web/desktop).
   if (!kIsWeb) {
     try {

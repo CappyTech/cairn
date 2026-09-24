@@ -52,7 +52,10 @@ From the current schema (`cairn-collections.json`, `pb_migrations/`):
 | `pair_requests` | `from`→`target` relations | who tried to pair with whom |
 
 The content (`ciphertext`, encrypted `name`/`peer_name`) is opaque. Everything
-in the "leaks" column is not. The headline leak is the **social graph** (the
+in the "leaks" column is not. The ciphertext's *length* is visible too, so the
+location payload is padded (`LocationSharingService.encodePayload`) to a size
+that doesn't depend on the optional speed / direction fields; otherwise "has a
+heading" would reveal "is moving" despite the fixed publish cadence. The headline leak is the **social graph** (the
 relation fields), reinforced by **timing** (update cadence, `last_seen`).
 
 ---

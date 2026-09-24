@@ -134,6 +134,47 @@ class Prefs {
     }
   }
 
+  // --- Motion & direction ---------------------------------------------------
+  // What contacts get (speed / direction ride the E2E-encrypted location blob,
+  // default OFF — they say more than position does) and what I see on my own
+  // map (default ON — it never leaves the device).
+
+  /// Share my speed with contacts (precise shares only).
+  static Future<bool> shareSpeed() async =>
+      (await _s.read(key: 'share_speed')) == '1';
+
+  static Future<void> setShareSpeed(bool v) async =>
+      _s.write(key: 'share_speed', value: v ? '1' : '0');
+
+  /// Share my direction of travel with contacts (precise shares only).
+  static Future<bool> shareHeading() async =>
+      (await _s.read(key: 'share_heading')) == '1';
+
+  static Future<void> setShareHeading(bool v) async =>
+      _s.write(key: 'share_heading', value: v ? '1' : '0');
+
+  /// Draw the direction cone on my own dot.
+  static Future<bool> showMyHeading() async =>
+      (await _s.read(key: 'show_my_heading')) != '0';
+
+  static Future<void> setShowMyHeading(bool v) async =>
+      _s.write(key: 'show_my_heading', value: v ? '1' : '0');
+
+  /// Point my cone with the compass when I'm still (uses the motion sensors
+  /// while the map is open).
+  static Future<bool> useCompass() async =>
+      (await _s.read(key: 'use_compass')) != '0';
+
+  static Future<void> setUseCompass(bool v) async =>
+      _s.write(key: 'use_compass', value: v ? '1' : '0');
+
+  /// Show contacts' speed and direction, when they share them.
+  static Future<bool> showContactsMotion() async =>
+      (await _s.read(key: 'show_contacts_motion')) != '0';
+
+  static Future<void> setShowContactsMotion(bool v) async =>
+      _s.write(key: 'show_contacts_motion', value: v ? '1' : '0');
+
   // --- Shared status --------------------------------------------------------
 
   /// A short label I choose to broadcast to contacts alongside my location

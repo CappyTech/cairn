@@ -4,6 +4,7 @@ import '../services/auth_service.dart';
 import '../services/pb_client.dart';
 import '../services/prefs.dart';
 import '../theme/brand.dart';
+import '../widgets/motion_settings_tiles.dart';
 import '../widgets/restart_widget.dart';
 import '../widgets/server_settings_dialog.dart';
 import 'admin_screen.dart';
@@ -43,7 +44,8 @@ Future<String?> showEditNameDialog(BuildContext context, String current) async {
 }
 
 /// Everything that used to live in Home's overflow menu, grouped:
-/// You (name, backup), Places & history, App (layout, server, about) — plus
+/// You (name, backup), Speed & direction, Places & history, App (layout,
+/// server, about) — plus
 /// the admin dashboard for admins. Home reloads name and layout on return.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -184,6 +186,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
           item(Icons.key_outlined, 'Backup & restore',
               () => _open(const BackupScreen()),
               subtitle: 'Your recovery phrase'),
+          header('Speed & direction'),
+          const MotionSettingsTiles(),
           header('Places & history'),
           item(Icons.place_outlined, 'Places',
               () => _open(const PlacesScreen())),

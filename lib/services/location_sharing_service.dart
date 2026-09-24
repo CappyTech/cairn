@@ -4,6 +4,7 @@ import 'pb_client.dart';
 import 'auth_service.dart';
 import 'pairing_service.dart';
 import 'crypto_service.dart';
+import 'motion.dart';
 import 'nickname_service.dart';
 import 'places_service.dart';
 import 'prefs.dart';
@@ -17,6 +18,8 @@ class ContactLocation {
   final double? accuracy;
   final bool approximate; // sender shared a rounded (coarse) position
   final String? label; // a status the SENDER chose to broadcast ("Hotel")
+  final double? speed; // m/s — only if the sender chose to share it
+  final double? heading; // course, degrees from north — only while moving
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -27,6 +30,8 @@ class ContactLocation {
     this.accuracy,
     this.approximate = false,
     this.label,
+    this.speed,
+    this.heading,
     required this.updated,
   });
 }
@@ -86,7 +91,10 @@ class LocationSharingService {
   }
 
   /// The location payload to encrypt for a contact. When [approximate], the
-  /// position is coarsened (~1 km) and accuracy is dropped. Pure.
+  /// position is coarsened (~1 km) and accuracy, speed and heading are all
+  /// dropped (a precise course/speed would undo the coarsening). [speed] (m/s)
+  /// and [heading] (degrees) are included only when given — the caller has
+  /// already applied the user's share toggles and the trust gates. Pure.
   static Map<String, dynamic> buildPayload({
     required double lat,
     required double lng,
@@ -94,6 +102,8 @@ class LocationSharingService {
     required bool approximate,
     required String ts,
     String? label,
+    double? speed,
+    double? heading,
   }) {
     return {
       'lat': approximate ? coarse(lat) : lat,
@@ -103,7 +113,39 @@ class LocationSharingService {
       'ts': ts,
       // A short status the sender broadcasts (e.g. "Hotel"); omitted when none.
       if (label != null && label.isNotEmpty) 'lbl': label,
+      // Rounded to fixed precision so their encoded width stays bounded.
+      if (!approximate && speed != null)
+        'spd': (speed.clamp(0, Motion.maxSpeed) * 10).round() / 10,
+      if (!approximate && heading != null)
+        'hdg': Motion.normalize(heading).round() % 360,
     };
+  }
+
+  /// The most bytes the optional motion fields can add to a payload's JSON:
+  /// `,"spd":350.0` (12) + `,"hdg":359` (10), with headroom.
+  static const _motionReserve = 32;
+
+  /// Payloads are padded to a multiple of this many bytes.
+  static const _padBlock = 64;
+
+  /// Encode [payload] as UTF-8 JSON, padded so its length doesn't depend on
+  /// whether the motion fields (`spd`, `hdg`) are present. The ciphertext size
+  /// is server-visible, and "has a heading" ≈ "is moving" — exactly the signal
+  /// the fixed publish cadence exists to hide (docs/metadata-privacy.md). The
+  /// target length is computed from the payload WITHOUT motion, plus a fixed
+  /// reserve, so moving and still encode to the same size. Pure.
+  static List<int> encodePayload(Map<String, dynamic> payload) {
+    final base = Map.of(payload)
+      ..remove('spd')
+      ..remove('hdg')
+      ..remove('pad');
+    final baseLen = utf8.encode(jsonEncode(base)).length;
+    final target =
+        ((baseLen + _motionReserve + _padBlock) ~/ _padBlock) * _padBlock;
+    final withPad = {...payload, 'pad': ''};
+    final len = utf8.encode(jsonEncode(withPad)).length;
+    withPad['pad'] = ' ' * (target - len);
+    return utf8.encode(jsonEncode(withPad));
   }
 
   /// The label to broadcast for my current position: a manual [manualStatus]
@@ -140,6 +182,8 @@ class LocationSharingService {
       label: (data['lbl'] as String?)?.trim().isNotEmpty == true
           ? (data['lbl'] as String).trim()
           : null,
+      speed: (data['spd'] as num?)?.toDouble(),
+      heading: (data['hdg'] as num?)?.toDouble(),
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }
@@ -147,16 +191,35 @@ class LocationSharingService {
   /// Encrypt my position for each paired contact and upsert their share row.
   /// Precision is decided PER CONTACT (their `precision`: precise / approximate /
   /// off), with a global "approximate only" master-switch that coarsens everyone.
+  ///
+  /// [speed] / [heading] (and their accuracies) are the raw GNSS readings; each
+  /// is shared only if the user turned on "share speed" / "share direction",
+  /// it passes the [Motion] trust gates, and the contact gets a precise share.
+  /// The shared heading is always the course of travel, never the compass.
   static Future<void> publish({
     required double lat,
     required double lng,
     double? accuracy,
+    double? speed,
+    double speedAccuracy = 0,
+    double? heading,
+    double headingAccuracy = 0,
   }) async {
     final me = AuthService.currentUser;
     if (me == null) return;
     final approxOnly = await Prefs.approxOnly();
     final contacts = await PairingService.myContacts();
     final ts = DateTime.now().toUtc().toIso8601String();
+
+    final shareSpeed =
+        speed != null && await Prefs.shareSpeed()
+            ? Motion.trustedSpeed(speed, speedAccuracy)
+            : null;
+    final shareHeading = speed != null && heading != null &&
+            await Prefs.shareHeading()
+        ? Motion.course(
+            speed: speed, heading: heading, headingAccuracy: headingAccuracy)
+        : null;
 
     // The status to broadcast this tick: a manual status, else a contact-visible
     // place I'm inside. Computed once (same for every recipient).
@@ -199,14 +262,16 @@ class LocationSharingService {
           existingByRecipient.remove(peerId);
         case ShareOp.create:
         case ShareOp.update:
-          final payload = utf8.encode(jsonEncode(buildPayload(
+          final payload = encodePayload(buildPayload(
             lat: lat,
             lng: lng,
             accuracy: accuracy,
             approximate: action == ShareAction.sendApproximate,
             ts: ts,
             label: label,
-          )));
+            speed: shareSpeed,
+            heading: shareHeading,
+          ));
           final blob = await CryptoService.sealFor(peerKey, payload);
           final body = {
             'sender': me.id,
