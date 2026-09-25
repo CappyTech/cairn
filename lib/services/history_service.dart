@@ -223,8 +223,8 @@ class HistoryService {
     }
 
     final merged = mergePoints(current, newPts);
-    final blob =
-        await seal(jsonEncode({'points': [for (final p in merged) p.toJson()]}));
+    final blob = await seal(
+        padded({'points': [for (final p in merged) p.toJson()]}));
 
     if (existing != null) {
       await client.collection(_collection).update(existing.id, body: {
@@ -242,6 +242,23 @@ class HistoryService {
         'rev': 1,
       });
     }
+  }
+
+  /// Smallest padded blob size; each step up doubles it.
+  static const minBlobBytes = 4096;
+
+  /// [body] as JSON, padded (with a `pad` field readers ignore) to the next
+  /// power-of-two size from [minBlobBytes]. The server sees each sealed blob's
+  /// size; without this it would grow point by point and show how much I
+  /// moved that day. Pure.
+  static String padded(Map<String, dynamic> body) {
+    final raw = jsonEncode(body);
+    // `,"pad":""` adds 9 characters before any padding goes in.
+    var target = minBlobBytes;
+    while (target < raw.length + 9) {
+      target *= 2;
+    }
+    return jsonEncode({...body, 'pad': ' ' * (target - raw.length - 9)});
   }
 
   /// Merge + dedup (by whole-second timestamp) + sort two point lists. Pure.

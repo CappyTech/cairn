@@ -44,12 +44,13 @@ void main() {
   test('server body: mode name and lat,lng pairs, thinned to the cap', () {
     final b = RoadSnapService.serverBody(TravelMode.cycle, line(3));
     expect(b['mode'], 'cycle');
+    final t = t0.millisecondsSinceEpoch ~/ 1000;
     expect(b['points'], [
-      [51.5, -0.1],
-      [51.501, -0.1],
-      [51.502, -0.1],
+      [51.5, -0.1, t],
+      [51.501, -0.1, t + 60],
+      [51.502, -0.1, t + 120],
     ]);
-    final long = RoadSnapService.serverBody(TravelMode.vehicle, line(900));
+    final long = RoadSnapService.serverBody(TravelMode.vehicle, line(3000));
     expect(long['points'], hasLength(RoadSnapService.maxServerPoints));
   });
 

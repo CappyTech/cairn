@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import '../services/activity_sensor.dart';
 import '../services/prefs.dart';
 
-/// History's switches: detect how I travel (activity sensor) and road
-/// snapping without the prompt. Shown in History's settings sheet.
+/// History's switches: detect how I travel (activity sensor), precise trip
+/// recording, and road snapping without the prompt. Shown in History's
+/// settings sheet.
 class HistorySettingsTiles extends StatefulWidget {
   const HistorySettingsTiles({super.key});
 
@@ -16,6 +17,7 @@ class _HistorySettingsTilesState extends State<HistorySettingsTiles> {
   bool _sensorAvailable = false; // Android 8+ / iOS
   bool _sensing = false;
   bool _roadSnap = false;
+  bool _precise = false;
 
   @override
   void initState() {
@@ -32,11 +34,13 @@ class _HistorySettingsTilesState extends State<HistorySettingsTiles> {
       await Prefs.setActivitySensing(false);
     }
     final roadSnap = await Prefs.roadSnapAllowed();
+    final precise = await Prefs.preciseRecording();
     if (!mounted) return;
     setState(() {
       _sensorAvailable = available;
       _sensing = sensing;
       _roadSnap = roadSnap;
+      _precise = precise;
       _loaded = true;
     });
   }
@@ -53,6 +57,11 @@ class _HistorySettingsTilesState extends State<HistorySettingsTiles> {
     await Prefs.setActivitySensing(on);
     await ActivitySensor.ensureListening(); // starts, or stops when off
     if (mounted) setState(() => _sensing = on);
+  }
+
+  Future<void> _setPrecise(bool on) async {
+    await Prefs.setPreciseRecording(on);
+    if (mounted) setState(() => _precise = on);
   }
 
   Future<void> _setRoadSnap(bool on) async {
@@ -73,6 +82,18 @@ class _HistorySettingsTilesState extends State<HistorySettingsTiles> {
             subtitle: const Text('Tells walking, cycling and driving apart.'),
             value: _sensing,
             onChanged: _setSensing,
+          ),
+        // Precise recording runs in the background service (phones only).
+        if (ActivitySensor.supported)
+          SwitchListTile(
+            secondary: const Icon(Icons.gps_fixed),
+            title: const Text('Precise trip recording'),
+            subtitle: Text(_sensing
+                ? 'Follows the roads while you move. Uses more battery.'
+                : 'Follows the roads. Uses more battery; less with '
+                    '"Detect how you travel" on.'),
+            value: _precise,
+            onChanged: _setPrecise,
           ),
         SwitchListTile(
           secondary: const Icon(Icons.route),

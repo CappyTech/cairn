@@ -3,7 +3,8 @@
 // trip's coordinates don't go to a third party.
 //
 //   POST /api/cairn/snap   (signed-in users only)
-//   { "mode": "walk" | "cycle" | "vehicle", "points": [[lat, lng], ...] }
+//   { "mode": "walk" | "cycle" | "vehicle",
+//     "points": [[lat, lng, epochSeconds?], ...] }
 //   → 200 { "line": [[lat, lng], ...] }
 //   → 503 when the router isn't set up / is down / can't match the trip, so
 //         the app falls back to the public OSM router.
@@ -12,24 +13,34 @@
 // deploy/docker-compose.yml); CAIRN_VALHALLA_URL points at it. Nothing is
 // stored or logged here: the points are forwarded and the line returned.
 //
+// With a time on every point (strictly increasing), Valhalla uses them to
+// rule out routes that couldn't have been travelled in between.
+//
 // NOTE: each hook handler runs in an isolated JS runtime, so all logic is
 // inline.
 routerAdd("POST", "/api/cairn/snap", (e) => {
   const body = e.requestInfo().body || {};
   const costing = { walk: "pedestrian", cycle: "bicycle", vehicle: "auto" }[body.mode];
   const raw = body.points;
-  if (!costing || !Array.isArray(raw) || raw.length < 2 || raw.length > 1000) {
-    throw new BadRequestError("Expected a mode and 2–1000 points.");
+  if (!costing || !Array.isArray(raw) || raw.length < 2 || raw.length > 5000) {
+    throw new BadRequestError("Expected a mode and 2–5000 points.");
   }
   const shape = [];
+  let timed = true;
+  let lastTime = -Infinity;
   for (const p of raw) {
     const lat = Number(p && p[0]);
     const lon = Number(p && p[1]);
     if (!isFinite(lat) || !isFinite(lon) || Math.abs(lat) > 90 || Math.abs(lon) > 180) {
       throw new BadRequestError("Bad point.");
     }
-    shape.push({ lat: lat, lon: lon });
+    const t = p.length > 2 ? Number(p[2]) : NaN;
+    if (!isFinite(t) || t <= lastTime) timed = false;
+    else lastTime = t;
+    shape.push(isFinite(t) ? { lat: lat, lon: lon, time: t } : { lat: lat, lon: lon });
   }
+  // Times only help if every point has one, in order; otherwise drop them.
+  if (!timed) for (const pt of shape) delete pt.time;
 
   const base = $os.getenv("CAIRN_VALHALLA_URL") || "http://cairn-valhalla:8002";
   let res;
@@ -42,6 +53,7 @@ routerAdd("POST", "/api/cairn/snap", (e) => {
         shape: shape,
         costing: costing,
         shape_match: "map_snap",
+        use_timestamps: timed,
         // Background fixes can be minutes (kilometres) apart.
         trace_options: { search_radius: 50, breakage_distance: 5000 },
         filters: { attributes: ["shape"], action: "include" },

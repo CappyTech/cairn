@@ -29,6 +29,11 @@ abstract final class ActivitySensor {
   static DateTime? _startedAt;
   static TravelMode? _mode;
   static DateTime? _at; // when [_mode] was detected (null: nothing yet)
+  static final _changes = StreamController<TravelMode?>.broadcast();
+
+  /// The sensed mode each time it changes (null: still / unknown), so the
+  /// precise recorder can start the moment I set off.
+  static Stream<TravelMode?> get changes => _changes.stream;
 
   static bool get supported =>
       !kIsWeb &&
@@ -88,8 +93,11 @@ abstract final class ActivitySensor {
 
   static void _onEvent(ActivityEvent e) {
     if (e.confidence < minConfidence) return;
-    _mode = modeFor(e.type);
+    final mode = modeFor(e.type);
+    final changed = mode != _mode;
+    _mode = mode;
     _at = DateTime.now();
+    if (changed) _changes.add(mode);
   }
 
   /// Whether this device can use the sensor at all (the plugin needs

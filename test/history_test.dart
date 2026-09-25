@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:my_app/services/history_service.dart';
 import 'package:my_app/services/places_service.dart';
@@ -508,6 +509,23 @@ void main() {
       expect(HistoryTimeline.arrows(north.take(1).toList()), isEmpty);
       // East is 90°.
       expect(HistoryTimeline.bearing(51.5, -0.1, 51.5, -0.09), closeTo(90, 0.5));
+    });
+  });
+
+  group('padded blobs', () {
+    test('pads to a power-of-two size, and still reads back', () {
+      final small = HistoryService.padded({'points': []});
+      expect(small.length, HistoryService.minBlobBytes);
+      final pts = [
+        for (var i = 0; i < 200; i++)
+          HistoryPoint(51.5 + i / 1e4, -0.1, DateTime.utc(2026, 9, 20, 8, i ~/ 60, i % 60))
+              .toJson()
+      ];
+      final big = HistoryService.padded({'points': pts});
+      expect(big.length, anyOf(8192, 16384, 32768));
+      expect(big.length >= 2 * HistoryService.minBlobBytes, isTrue);
+      final back = (jsonDecode(big) as Map<String, dynamic>)['points'] as List;
+      expect(back, hasLength(200));
     });
   });
 }

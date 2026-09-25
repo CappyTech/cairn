@@ -66,6 +66,15 @@ class Prefs {
   static Future<void> setActivitySensing(bool v) async =>
       _s.write(key: 'activity_sensing', value: v ? '1' : '0');
 
+  /// Record my trips densely in the background (a GPS stream while I'm
+  /// moving) for History, instead of one fix per sharing tick. Off by
+  /// default: it costs battery.
+  static Future<bool> preciseRecording() async =>
+      (await _s.read(key: 'precise_recording')) == '1';
+
+  static Future<void> setPreciseRecording(bool v) async =>
+      _s.write(key: 'precise_recording', value: v ? '1' : '0');
+
   /// Whether first-run onboarding has been completed on this device.
   static Future<bool> onboardingDone() async =>
       (await _s.read(key: 'onboarding_done')) == '1';
