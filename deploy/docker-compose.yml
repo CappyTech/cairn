@@ -35,7 +35,9 @@ services:
   # Refresh the map (e.g. monthly): delete ./valhalla/*.pbf so a fresh one is
   # downloaded, and start it once with force_rebuild=True.
   valhalla:
-    image: ghcr.io/valhalla/valhalla-scripted:latest
+    # Pinned: deploys run `docker compose pull`, and `latest` tracks Valhalla's
+    # main branch. Bump deliberately (tags: ghcr.io/valhalla/valhalla-scripted).
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.0
     container_name: cairn-valhalla
     profiles: [routing]
     restart: unless-stopped
