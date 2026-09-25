@@ -22,6 +22,7 @@ import 'map_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/background_share_ux.dart';
 import '../widgets/contact_tile.dart';
+import '../widgets/recent_trips.dart';
 import '../theme/brand.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -51,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
   HomeLayout _layout = HomeLayout.refined;
   bool _panelOpen = true; // landscape Map first: the floating panel
+  int _tripsReload = 0; // bumped on pull-to-refresh: reloads Recent trips
   // Wide layout: the people list points the side-by-side map at someone.
   final _mapFocus = ValueNotifier<String?>(null);
   static const _wideBreakpoint = 700.0;
@@ -190,6 +192,12 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
     );
     if (result != null) await _setStatus(result);
+  }
+
+  /// Pull-to-refresh: people, and Recent trips too.
+  Future<void> _pullRefresh() {
+    setState(() => _tripsReload++);
+    return _refresh();
   }
 
   Future<void> _refresh() async {
@@ -826,6 +834,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 4),
       ..._people(focusable: focusable),
+      RecentTrips(reloadToken: _tripsReload),
       ];
 
   /// Logo + settings gear in a small floating pill (Map first).
@@ -935,7 +944,7 @@ class _HomeScreenState extends State<HomeScreen> {
           SizedBox(
             width: 360,
             child: RefreshIndicator(
-              onRefresh: _refresh,
+              onRefresh: _pullRefresh,
               child: ListView(
                 padding: const EdgeInsets.all(16),
                 children: [
@@ -960,6 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 4),
                   ..._people(focusable: true),
+                  RecentTrips(reloadToken: _tripsReload),
                 ],
               ),
             ),
@@ -982,7 +992,7 @@ class _HomeScreenState extends State<HomeScreen> {
         label: const Text('Map'),
       ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _pullRefresh,
         child: ListView(
           padding: const EdgeInsets.fromLTRB(16, 16, 16, 96),
           children: [
@@ -1038,6 +1048,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'People'
                 : 'People (${_contacts.length})'),
             ..._people(),
+            RecentTrips(reloadToken: _tripsReload),
           ],
         ),
       ),
@@ -1081,7 +1092,7 @@ class _HomeScreenState extends State<HomeScreen> {
         ),
       ),
       body: RefreshIndicator(
-        onRefresh: _refresh,
+        onRefresh: _pullRefresh,
         child: ListView(
           padding: const EdgeInsets.all(16),
           children: [
@@ -1092,6 +1103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'People'
                 : 'People · ${_contacts.length}'),
             ..._people(),
+            RecentTrips(reloadToken: _tripsReload),
           ],
         ),
       ),
