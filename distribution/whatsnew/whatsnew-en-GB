@@ -1,13 +1,13 @@
-Cairn v0.0.18
+Cairn v0.0.20
 
-• Easier setup: restore a device, or just get started.
-• Choose your home: Classic, People first or Map first.
-• Dark mode, and a side-by-side map in landscape.
-• New Settings screen.
-• Shares while the app is open, not just on the map.
-• Background sharing never runs when it's switched off or its notification is hidden.
-• Live "last seen" times without refreshing.
-• Clearer code scanning, with easy paste.
-• Update prompts when a new version is out.
+• History now records all day, not just while the app is open.
+• Trips coloured by walk, cycle or vehicle, with arrows and numbered stops.
+• Gaps in your data show as gaps, not long journeys.
+• Days run midnight to midnight, your time.
+• Scrub by time; tap a trip to focus it.
+• Optional: snap a trip to roads.
+• Fixed the History map sometimes staying blank.
+• Choose whether contacts see your speed and direction.
+• See-through pins on the map.
 
 All end-to-end encrypted.
