@@ -51,6 +51,7 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_compass: ^0.8.1
   http: ^1.6.0
+  activity_recognition_flutter: ^6.1.0
 
 dev_dependencies:
   flutter_test:

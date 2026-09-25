@@ -14,6 +14,17 @@
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!-- Internet for map tiles + backend (implied, but explicit for clarity). -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Activity recognition (walking / cycling / in a vehicle) tags History
+         trips; opt-in in Settings. The plugin declares the permission. It
+         also ships a "health" foreground service we don't use (the
+         background-sharing service already keeps us running), so drop it
+         and its permission rather than declare a health service to Play. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH"
+        tools:node="remove"/>
+    <!-- The activity plugin says Android 8+ only because of that service
+         (notification channels, startForegroundService). Without it the
+         rest works on 7 too; Settings only offers the sensor on 8+. -->
+    <uses-sdk tools:overrideLibrary="dk.carp.activity_recognition_flutter"/>
     <application
         android:label="Cairn"
         android:name="${applicationName}"
@@ -53,6 +64,9 @@
             android:foregroundServiceType="location"
             android:exported="false"
             tools:replace="android:foregroundServiceType,android:exported" />
+        <service
+            android:name="dk.carp.activity_recognition_flutter.ForegroundService"
+            tools:node="remove" />
     </application>
     <!-- Required to query activities that can process text, see:
          https://developer.android.com/training/package-visibility and

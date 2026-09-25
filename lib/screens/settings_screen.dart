@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
+import '../services/activity_sensor.dart';
 import '../services/auth_service.dart';
 import '../services/pb_client.dart';
 import '../services/prefs.dart';
@@ -61,6 +62,8 @@ class _SettingsScreenState extends State<SettingsScreen> {
   HomeLayout _layout = HomeLayout.refined;
   String _version = '';
   bool _roadSnap = false; // snap trips to roads without asking each time
+  bool _sensing = false; // tag my trips with the phone's activity sensor
+  bool _sensorAvailable = false; // Android 8+ / iOS
 
   static const _layoutInfo = {
     HomeLayout.refined: (
@@ -90,12 +93,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
     final name = await AuthService.displayName();
     final layout = await Prefs.homeLayout();
     final roadSnap = await Prefs.roadSnapAllowed();
+    final sensorAvailable = await ActivitySensor.available();
+    // On, but the permission was since revoked in system settings → off.
+    var sensing = await Prefs.activitySensing();
+    if (sensing && !await ActivitySensor.permitted()) {
+      sensing = false;
+      await Prefs.setActivitySensing(false);
+    }
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
       _name = name;
       _layout = layout;
       _roadSnap = roadSnap;
+      _sensing = sensing;
+      _sensorAvailable = sensorAvailable;
       _version = info.version;
     });
   }
@@ -139,6 +151,20 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (picked == null || picked == _layout) return;
     await Prefs.setHomeLayout(picked);
     if (mounted) setState(() => _layout = picked);
+  }
+
+  Future<void> _setSensing(bool on) async {
+    if (on && !await ActivitySensor.requestPermission()) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text('Allow "Physical activity" for Cairn in system '
+                'settings to use this.')));
+      }
+      return;
+    }
+    await Prefs.setActivitySensing(on);
+    await ActivitySensor.ensureListening(); // starts, or stops when off
+    if (mounted) setState(() => _sensing = on);
   }
 
   Future<void> _serverSettings() async {
@@ -201,6 +227,16 @@ class _SettingsScreenState extends State<SettingsScreen> {
               () => _open(const PlacesScreen())),
           item(Icons.history, 'History & trips',
               () => _open(const HistoryScreen())),
+          if (_sensorAvailable)
+            SwitchListTile(
+              secondary: const Icon(Icons.directions_car_outlined),
+              title: const Text('Detect how you travel'),
+              subtitle: const Text("Uses your phone's motion sensor to tell "
+                  'walking, cycling and driving apart in your trips, instead '
+                  'of guessing from speed. Applies to trips from now on.'),
+              value: _sensing,
+              onChanged: _setSensing,
+            ),
           SwitchListTile(
             secondary: const Icon(Icons.alt_route),
             title: const Text('Snap to roads without asking'),

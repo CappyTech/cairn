@@ -15,7 +15,18 @@ class HistoryPoint {
   final DateTime t; // UTC instant of the fix
   final double? acc; // accuracy in metres, when known
 
-  const HistoryPoint(this.lat, this.lng, this.t, [this.acc]);
+  /// How the phone's activity sensor said I was moving when the fix was
+  /// taken, when it said anything (older points, contacts' points, and
+  /// devices without the sensor have none).
+  final TravelMode? mode;
+
+  const HistoryPoint(this.lat, this.lng, this.t, [this.acc, this.mode]);
+
+  static const _modeCodes = {
+    TravelMode.walk: 'w',
+    TravelMode.cycle: 'c',
+    TravelMode.vehicle: 'v',
+  };
 
   /// Compact wire form (epoch seconds keeps the daily blob small).
   Map<String, dynamic> toJson() => {
@@ -23,6 +34,7 @@ class HistoryPoint {
         'ln': lng,
         't': t.toUtc().millisecondsSinceEpoch ~/ 1000,
         if (acc != null) 'a': acc,
+        if (mode != null) 'm': _modeCodes[mode],
       };
 
   static HistoryPoint fromJson(Map<String, dynamic> j) => HistoryPoint(
@@ -31,6 +43,10 @@ class HistoryPoint {
         DateTime.fromMillisecondsSinceEpoch((j['t'] as num).toInt() * 1000,
             isUtc: true),
         (j['a'] as num?)?.toDouble(),
+        [
+          for (final e in _modeCodes.entries)
+            if (e.value == j['m']) e.key
+        ].firstOrNull,
       );
 }
 
@@ -102,6 +118,7 @@ class HistoryService {
     required double lng,
     required DateTime ts,
     double? accuracy,
+    TravelMode? mode,
   }) {
     if (!recordingEnabled) return; // no consent for this server yet
     final last = _lastAt[subject];
@@ -111,7 +128,7 @@ class HistoryService {
       if (dt < _minInterval && moved < _minDistanceM) return; // too close, skip
       if (!ts.isAfter(last.t) && moved < _minDistanceM) return; // stale/dup
     }
-    final p = HistoryPoint(lat, lng, ts.toUtc(), accuracy);
+    final p = HistoryPoint(lat, lng, ts.toUtc(), accuracy, mode);
     (_buffer[subject] ??= []).add(p);
     _lastAt[subject] = p;
   }
@@ -501,8 +518,9 @@ class Stay extends TimelineEntry {
   }) : super(start, end);
 }
 
-/// How someone was most likely getting about, guessed from speed alone (so a
-/// bus and a car look the same: both are [vehicle]).
+/// How someone was getting about: from the phone's activity sensor where it
+/// reported, else guessed from speed (so a bus and a car look the same: both
+/// are [vehicle]).
 enum TravelMode { walk, cycle, vehicle }
 
 /// Travel between two stays (or from the start / to the end of the trail).
@@ -527,7 +545,10 @@ class Move extends TimelineEntry {
       ? 0
       : distanceMeters / duration.inSeconds;
 
-  TravelMode get mode => HistoryTimeline.modeForSpeed(avgSpeedMps);
+  /// What the activity sensor mostly said along the way, else a guess from
+  /// the average speed.
+  TravelMode get mode =>
+      HistoryTimeline.sensedMode(path) ?? HistoryTimeline.modeForSpeed(avgSpeedMps);
 }
 
 /// A stretch with no location data (phone off, no signal, app killed) between
@@ -833,19 +854,37 @@ abstract final class HistoryTimeline {
     );
   }
 
-  /// Split a move's [path] into runs of the same speed band (for colouring
-  /// the line by speed). Neighbouring runs share their boundary point so the
+  /// The mode the activity sensor reported most along [path], or null when
+  /// it reported nothing (old data, contacts, no sensor). Ties go to the
+  /// faster mode. Pure.
+  static TravelMode? sensedMode(List<HistoryPoint> path) {
+    final counts = <TravelMode, int>{};
+    for (final p in path) {
+      final m = p.mode;
+      if (m != null) counts[m] = (counts[m] ?? 0) + 1;
+    }
+    if (counts.isEmpty) return null;
+    return TravelMode.values.reversed
+        .reduce((best, m) => (counts[m] ?? 0) > (counts[best] ?? 0) ? m : best);
+  }
+
+  /// Split a move's [path] into runs of the same mode — as sensed, else by
+  /// speed band — for colouring the line. Neighbouring runs share their boundary point so the
   /// line stays joined up. Pure.
   static List<({TravelMode mode, List<HistoryPoint> points})> speedRuns(
       List<HistoryPoint> path) {
     final out = <({TravelMode mode, List<HistoryPoint> points})>[];
+    final sensed = sensedMode(path);
     for (var i = 0; i + 1 < path.length; i++) {
       final a = path[i], b = path[i + 1];
       final secs = b.t.difference(a.t).inMilliseconds / 1000;
       final mps = secs <= 0
           ? 0.0
           : PlacesService.distanceMeters(a.lat, a.lng, b.lat, b.lng) / secs;
-      final mode = modeForSpeed(mps);
+      // The sensor's word for this stretch wins; a sensed trip's unsensed
+      // stretches (stopped at lights) keep the trip's mode; with no sensor
+      // data at all, fall back to speed.
+      final mode = b.mode ?? sensed ?? modeForSpeed(mps);
       if (out.isNotEmpty && out.last.mode == mode) {
         out.last.points.add(b);
       } else {

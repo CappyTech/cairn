@@ -57,6 +57,15 @@ class Prefs {
   static Future<void> setRoadSnapAllowed(bool v) async =>
       _s.write(key: 'road_snap_allowed', value: v ? '1' : '0');
 
+  /// Tag my recorded fixes with the phone's activity sensor (walking,
+  /// cycling, in a vehicle) so History knows how I travelled. Off until the
+  /// user turns it on and grants the permission.
+  static Future<bool> activitySensing() async =>
+      (await _s.read(key: 'activity_sensing')) == '1';
+
+  static Future<void> setActivitySensing(bool v) async =>
+      _s.write(key: 'activity_sensing', value: v ? '1' : '0');
+
   /// Whether first-run onboarding has been completed on this device.
   static Future<bool> onboardingDone() async =>
       (await _s.read(key: 'onboarding_done')) == '1';

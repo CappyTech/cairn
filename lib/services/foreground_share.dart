@@ -2,6 +2,7 @@ import 'dart:async';
 import 'package:flutter/widgets.dart';
 import 'package:geolocator/geolocator.dart';
 import 'auth_service.dart';
+import 'activity_sensor.dart';
 import 'history_service.dart';
 import 'location_service.dart';
 import 'location_sharing_service.dart';
@@ -138,6 +139,7 @@ class ForegroundShare with WidgetsBindingObserver {
         lng: p.longitude,
         ts: p.timestamp.toUtc(), // when the fix was taken
         accuracy: p.accuracy,
+        mode: ActivitySensor.modeAt(p.timestamp),
       );
     }
   }
