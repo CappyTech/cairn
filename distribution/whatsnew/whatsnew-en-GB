@@ -1,6 +1,6 @@
-Cairn v0.0.21
+Cairn v0.0.22
 
-• Your last few trips now show on Home, in every layout. Tap one to open it in History.
-• New setting: snap trips to roads without being asked each time (Settings → Places & history).
+• Trips can now tell walking, cycling and driving apart using your phone's motion sensor, so a slow drive through town no longer shows as a bike ride. Turn it on in Settings → Places & history → Detect how you travel.
+• Applies to trips from then on.
 
 All end-to-end encrypted.
