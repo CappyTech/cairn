@@ -1,5 +1,5 @@
-Cairn v0.0.22
+Cairn v0.0.23
 
-• Trips can tell walking, cycling and driving apart using your phone's motion sensor, so a slow drive through town no longer shows as a bike ride. Turn it on in History → settings (the sliders button).
-• History's options now live there too; Settings is tidier.
-• Snap to roads can use your own Cairn server instead of a public one.
+• Precise trip recording: trips follow the roads even with the app closed. Turn it on in History → settings (the sliders button). Uses more battery while you move.
+• With road snapping always allowed, trips snap to roads automatically.
+• Your history's size on the server no longer hints at how much you moved.
