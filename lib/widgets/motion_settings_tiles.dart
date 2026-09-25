@@ -43,8 +43,8 @@ class MotionSettingsTiles extends StatelessWidget {
               Icons.speed,
               'Share my speed',
               s.shareSpeed
-                  ? 'On — contacts with precise sharing see how fast you move.'
-                  : 'Off — contacts see only where you are.',
+                  ? 'Contacts see how fast you\'re moving.'
+                  : 'Contacts see only where you are.',
               s.shareSpeed,
               (v) => set(s.copyWith(shareSpeed: v)),
             ),
@@ -52,9 +52,8 @@ class MotionSettingsTiles extends StatelessWidget {
               Icons.explore_outlined,
               'Share my direction',
               s.shareHeading
-                  ? 'On — contacts see which way you\'re travelling, '
-                      'while you\'re moving.'
-                  : 'Off — contacts don\'t see which way you\'re heading.',
+                  ? 'Contacts see which way you\'re heading.'
+                  : 'Contacts don\'t see which way you\'re heading.',
               s.shareHeading,
               (v) => set(s.copyWith(shareHeading: v)),
             ),
@@ -71,7 +70,7 @@ class MotionSettingsTiles extends StatelessWidget {
             sw(
               Icons.navigation_outlined,
               'My direction on the map',
-              'A cone on your dot pointing the way you\'re going.',
+              'A cone on your dot shows your heading.',
               s.showMyHeading,
               (v) => set(s.copyWith(showMyHeading: v)),
             ),
@@ -79,8 +78,7 @@ class MotionSettingsTiles extends StatelessWidget {
               Icons.screen_rotation_alt,
               'Use the compass when still',
               s.showMyHeading
-                  ? 'Points the cone where your phone faces, using its motion '
-                      'sensors while the map is open.'
+                  ? 'Points the cone where your phone faces.'
                   : 'Turn on "My direction" first.',
               s.showMyHeading && s.useCompass,
               s.showMyHeading ? (v) => set(s.copyWith(useCompass: v)) : null,
@@ -88,7 +86,7 @@ class MotionSettingsTiles extends StatelessWidget {
             sw(
               Icons.people_outline,
               'Contacts\' speed & direction',
-              'Show them when a contact chooses to share them.',
+              'When a contact chooses to share them.',
               s.showContactsMotion,
               (v) => set(s.copyWith(showContactsMotion: v)),
             ),

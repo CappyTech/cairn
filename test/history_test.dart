@@ -26,6 +26,16 @@ void main() {
       expect(back.acc, 12.5);
       expect(back.t, DateTime.utc(2026, 9, 20, 8, 30, 15));
     });
+
+    test('carries the sensed mode, and reads points without one', () {
+      final p = HistoryPoint(
+          51.5, -0.1, DateTime.utc(2026, 9, 20), null, TravelMode.vehicle);
+      expect(p.toJson()['m'], 'v');
+      expect(HistoryPoint.fromJson(p.toJson()).mode, TravelMode.vehicle);
+      final old = HistoryPoint.fromJson({'la': 1, 'ln': 2, 't': 0});
+      expect(old.mode, isNull);
+      expect(old.toJson().containsKey('m'), isFalse);
+    });
   });
 
   group('dayKey', () {
@@ -411,6 +421,41 @@ void main() {
           [away(base(0)), HistoryPoint(51.5074 + 0.018, -0.1278, base(12))],
           []).single as Move;
       expect(walk.mode, TravelMode.walk);
+    });
+
+    test('the activity sensor beats the speed guess', () {
+      // 20 km/h through town: speed alone says cycling.
+      HistoryPoint pt(int min, [TravelMode? m]) => HistoryPoint(
+          51.5074 + 0.003 * min, -0.1278, base(min), null, m);
+      final unsensed = [for (var i = 0; i <= 10; i++) pt(i)];
+      final move = HistoryTimeline.build(unsensed, []).single as Move;
+      expect(move.mode, TravelMode.cycle);
+
+      // The same trip, the sensor saying "in a vehicle" (bar a still moment
+      // at the lights, and a walk back to the car).
+      final sensed = [
+        pt(0, TravelMode.walk),
+        for (var i = 1; i <= 10; i++) pt(i, i == 5 ? null : TravelMode.vehicle),
+      ];
+      final drive = HistoryTimeline.build(sensed, []).single as Move;
+      expect(drive.mode, TravelMode.vehicle);
+      // Per-stretch colours follow the sensor; the untagged stretch keeps
+      // the trip's mode rather than falling back to speed.
+      final runs = HistoryTimeline.speedRuns(drive.path);
+      expect(runs.map((r) => r.mode), [TravelMode.vehicle]);
+    });
+
+    test('sensedMode: majority, ties to the faster mode, null when none', () {
+      HistoryPoint pt(TravelMode? m) => HistoryPoint(0, 0, base(0), null, m);
+      expect(HistoryTimeline.sensedMode([pt(null), pt(null)]), isNull);
+      expect(
+          HistoryTimeline.sensedMode(
+              [pt(TravelMode.walk), pt(TravelMode.walk), pt(TravelMode.cycle)]),
+          TravelMode.walk);
+      expect(
+          HistoryTimeline.sensedMode(
+              [pt(TravelMode.walk), pt(TravelMode.vehicle)]),
+          TravelMode.vehicle);
     });
 
     test('positionAt interpolates, clamps, and knows about gaps', () {

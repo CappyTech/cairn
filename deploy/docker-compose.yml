@@ -11,6 +11,43 @@ services:
     restart: unless-stopped
     volumes:
       - ./pb_data:/pb/pb_data      # the ONLY persistent state — back this up
+    environment:
+      # History's "Snap to roads" goes through PocketBase (signed-in users
+      # only) to this router; if it's down the app falls back to the public
+      # OSM router. Unset = this default.
+      - CAIRN_VALHALLA_URL=http://cairn-valhalla:8002
+    networks:
+      - edge
+
+  # Self-hosted road matching for History's "Snap to roads" (Valhalla's
+  # trace_attributes), so trips don't go to a third party. Internal only: no
+  # port, and Caddy doesn't route to it — the app reaches it through
+  # PocketBase's /api/cairn/snap. One Great Britain graph serves walking,
+  # cycling and driving.
+  #
+  # Opt-in, so a deploy never starts a map build by surprise: enable it on
+  # the box with COMPOSE_PROFILES=routing in /docker/cairn-server/.env, then
+  # `docker compose up -d`.
+  #
+  # First start downloads the GB extract (~2 GB) and builds the tiles, which
+  # takes a while and needs several GB of RAM and disk; lower server_threads
+  # if the build is killed. Until it's done, snapping uses the public router.
+  # Refresh the map (e.g. monthly): delete ./valhalla/*.pbf so a fresh one is
+  # downloaded, and start it once with force_rebuild=True.
+  valhalla:
+    # Pinned: deploys run `docker compose pull`, and `latest` tracks Valhalla's
+    # main branch. Bump deliberately (tags: ghcr.io/valhalla/valhalla-scripted).
+    image: ghcr.io/valhalla/valhalla-scripted:3.9.0
+    container_name: cairn-valhalla
+    profiles: [routing]
+    restart: unless-stopped
+    volumes:
+      - ./valhalla:/custom_files   # map data + built tiles (rebuildable)
+    environment:
+      - tile_urls=https://download.geofabrik.de/europe/great-britain-latest.osm.pbf
+      - server_threads=2
+      - build_elevation=False
+      - build_transit=False
     networks:
       - edge
 

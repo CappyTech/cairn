@@ -13,6 +13,7 @@ import 'bg_strategy.dart';
 import 'places_service.dart';
 import 'geofence_monitor.dart';
 import 'history_policy.dart';
+import 'activity_sensor.dart';
 import 'history_service.dart';
 import 'pairing_service.dart';
 import 'prefs.dart';
@@ -266,6 +267,7 @@ void onStart(ServiceInstance service) async {
           lng: pos.longitude,
           ts: pos.timestamp.toUtc(), // when the fix was taken
           accuracy: pos.accuracy,
+          mode: ActivitySensor.modeAt(pos.timestamp),
         );
       }
     } catch (_) {

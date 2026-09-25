@@ -130,7 +130,7 @@ class _HomeScreenState extends State<HomeScreen> {
         content: Text(
           '$kept\n\n'
           "Your history is end-to-end encrypted — only you can read it. It's "
-          'used for the History & trips view. You can change or clear it any '
+          'used for the History view. You can change or clear it any '
           'time, and you can keep less than the server does in History settings.',
         ),
         actions: [

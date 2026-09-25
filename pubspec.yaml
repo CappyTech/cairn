@@ -18,7 +18,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # of the product and file versions while build-number is used as the build suffix.
 # Local/dev default. CI overrides this from the git tag (versionName) and the
 # Actions run number (versionCode) — see .github/workflows/release.yml.
-version: 0.0.21+18
+version: 0.0.22+19
 
 environment:
   sdk: ^3.11.4
@@ -51,6 +51,7 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_compass: ^0.8.1
   http: ^1.6.0
+  activity_recognition_flutter: ^6.1.0
 
 dev_dependencies:
   flutter_test:
