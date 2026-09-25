@@ -680,9 +680,11 @@ abstract final class HistoryTimeline {
     }
 
     // 3. Interleave travel between the stays: moves over continuous data,
-    // gaps where it drops out.
+    // gaps where it drops out. [fromIsStay]/[toIsStay]: whether s[from]/s[to]
+    // is the edge point of a stay (already shown, so not repeated here).
     final out = <TimelineEntry>[];
-    void travel(int from, int to, Place? fromPlace, Place? toPlace) {
+    void travel(int from, int to, Place? fromPlace, Place? toPlace,
+        {required bool fromIsStay, required bool toIsStay}) {
       // Cut [from..to] into runs of points with no gap longer than maxGap.
       final runs = <(int, int)>[];
       var runStart = from;
@@ -698,26 +700,26 @@ abstract final class HistoryTimeline {
         final (a, b) = runs[r];
         if (r > 0) {
           final prevEnd = runs[r - 1].$2;
-          final last = out.isEmpty ? null : out.last;
-          if (last is Gap && last.end == s[prevEnd].t) {
-            // A lone fix between two gaps: fold it into one longer gap.
-            out[out.length - 1] = Gap(
-              fromLat: last.fromLat,
-              fromLng: last.fromLng,
-              toLat: s[a].lat,
-              toLng: s[a].lng,
-              start: last.start,
-              end: s[a].t,
-            );
-          } else {
-            out.add(Gap(
-              fromLat: s[prevEnd].lat,
-              fromLng: s[prevEnd].lng,
-              toLat: s[a].lat,
-              toLng: s[a].lng,
-              start: s[prevEnd].t,
-              end: s[a].t,
-            ));
+          out.add(Gap(
+            fromLat: s[prevEnd].lat,
+            fromLng: s[prevEnd].lng,
+            toLat: s[a].lat,
+            toLng: s[a].lng,
+            start: s[prevEnd].t,
+            end: s[a].t,
+          ));
+        }
+        // Next to a gap, a run that never goes anywhere is someone seen in
+        // one spot, not a (0 m) journey: show it as a stop. Leave out a
+        // neighbouring stay's own edge point.
+        if (runs.length > 1) {
+          final lo = a == from && fromIsStay ? a + 1 : a;
+          final hi = b == to && toIsStay ? b - 1 : b;
+          if (lo > hi) continue; // only a stay's edge point
+          final spot = _stationary(s, placeOf, lo, hi);
+          if (spot != null) {
+            out.add(spot);
+            continue;
           }
         }
         if (b > a) {
@@ -735,17 +737,19 @@ abstract final class HistoryTimeline {
     }
 
     if (stays.isEmpty) {
-      travel(0, s.length - 1, null, null);
+      travel(0, s.length - 1, null, null, fromIsStay: false, toIsStay: false);
       return out;
     }
     if (stays.first.start > 0) {
-      travel(0, stays.first.start, null, stays.first.place);
+      travel(0, stays.first.start, null, stays.first.place,
+          fromIsStay: false, toIsStay: true);
     }
     for (var k = 0; k < stays.length; k++) {
       final c = stays[k];
       if (k > 0) {
         final prev = stays[k - 1];
-        travel(prev.end, c.start, prev.place, c.place);
+        travel(prev.end, c.start, prev.place, c.place,
+            fromIsStay: true, toIsStay: true);
       }
       out.add(Stay(
         place: c.place,
@@ -756,9 +760,39 @@ abstract final class HistoryTimeline {
       ));
     }
     if (stays.last.end < s.length - 1) {
-      travel(stays.last.end, s.length - 1, stays.last.place, null);
+      travel(stays.last.end, s.length - 1, stays.last.place, null,
+          fromIsStay: true, toIsStay: false);
     }
     return out;
+  }
+
+  /// s[lo..hi] as a [Stay] if every point is within [stayRadiusMeters] of the
+  /// first, else null. Named after their saved place if they all share one.
+  static Stay? _stationary(
+      List<HistoryPoint> s, List<Place?> placeOf, int lo, int hi) {
+    var lat = 0.0, lng = 0.0;
+    for (var k = lo; k <= hi; k++) {
+      if (PlacesService.distanceMeters(
+              s[lo].lat, s[lo].lng, s[k].lat, s[k].lng) >
+          stayRadiusMeters) {
+        return null;
+      }
+      lat += s[k].lat;
+      lng += s[k].lng;
+    }
+    final place = placeOf[lo];
+    var shared = place != null;
+    for (var k = lo; k <= hi && shared; k++) {
+      shared = placeOf[k]?.id == place!.id;
+    }
+    final n = hi - lo + 1;
+    return Stay(
+      place: shared ? place : null,
+      lat: shared ? place!.lat : lat / n,
+      lng: shared ? place!.lng : lng / n,
+      start: s[lo].t,
+      end: s[hi].t,
+    );
   }
 
   /// Where the trail was at [t]: interpolated between the fixes either side,

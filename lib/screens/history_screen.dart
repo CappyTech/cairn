@@ -138,23 +138,38 @@ class _HistoryScreenState extends State<HistoryScreen> {
     _fitTo([for (final p in pts) LatLng(p.lat, p.lng)], 48);
   }
 
-  /// Frame [coords] (after the next frame, once the map has its size).
+  /// Move the camera once this frame's layout has settled AND flutter_map has
+  /// delivered the events it queued during it. Showing or resizing the bottom
+  /// panel resizes the map, and flutter_map reports that with an event
+  /// carrying the camera as it was, delivered a moment later. Moving in a
+  /// plain post-frame callback lets that stale event land after the move: the
+  /// tile layer then loads the old zoom's tiles and drops the new zoom's, and
+  /// the map stays blank grey until the next pan or zoom.
+  void _afterLayout(void Function() move) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      Future<void>.delayed(Duration.zero, () {
+        if (!mounted) return;
+        try {
+          move();
+        } catch (_) {}
+      });
+    });
+  }
+
+  /// Frame [coords] (see [_afterLayout] for the timing).
   void _fitTo(List<LatLng> coords, double padding) {
     if (coords.isEmpty) return;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      if (!mounted) return;
-      try {
-        final spread = coords.any((c) => c != coords.first);
-        if (!spread) {
-          _map.move(coords.first, 15);
-        } else {
-          _map.fitCamera(CameraFit.coordinates(
-            coordinates: coords,
-            padding: EdgeInsets.all(padding),
-            maxZoom: 17,
-          ));
-        }
-      } catch (_) {}
+    _afterLayout(() {
+      final spread = coords.any((c) => c != coords.first);
+      if (!spread) {
+        _map.move(coords.first, 15);
+      } else {
+        _map.fitCamera(CameraFit.coordinates(
+          coordinates: coords,
+          padding: EdgeInsets.all(padding),
+          maxZoom: 17,
+        ));
+      }
     });
   }
 
@@ -786,7 +801,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
               width: 24,
               child: Center(
                   child: _stopBadge(_stays.indexOf(e) + 1, size: 22))),
-          title: Text(e.place?.name ?? pin?.name ?? 'Stopped',
+          // A single sighting was only *seen* there; don't claim a stop.
+          title: Text(
+              e.place?.name ??
+                  pin?.name ??
+                  (e.duration.inMinutes < 1 ? 'Seen here' : 'Stopped'),
               style: const TextStyle(fontWeight: FontWeight.w600)),
           subtitle: Text(e.duration.inMinutes < 1
               ? 'Seen at ${_hm(e.start)}'
@@ -836,9 +855,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _selected = null;
       _t = s.start;
     });
-    try {
-      _map.move(LatLng(s.lat, s.lng), 16);
-    } catch (_) {}
+    // Leaving a focused trip swaps the panel's header, resizing the map.
+    _afterLayout(() => _map.move(LatLng(s.lat, s.lng), 16));
   }
 
   /// Focus one trip: fade the rest, scrub within it, and frame its path.

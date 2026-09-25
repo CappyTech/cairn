@@ -317,17 +317,60 @@ void main() {
       expect(tl.single.duration, const Duration(hours: 6));
     });
 
-    test('a lone fix between two gaps folds into one gap', () {
+    test('a lone fix between two gaps is a sighting, not hidden in a gap', () {
       final pts = [
         at(home, at8(8, 0)),
         HistoryPoint(51.53, -0.1278, at8(9, 0)),
-        HistoryPoint(51.56, -0.1278, at8(10, 0)),
         at(work, at8(11, 0)),
       ];
       final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Gap, Stay, Gap, Stay]);
+      final seen = tl[2] as Stay;
+      expect(seen.place, isNull);
+      expect(seen.start, at8(9, 0));
+      expect(seen.duration, Duration.zero);
+      expect((tl[1] as Gap).end, at8(9, 0));
+      expect((tl[3] as Gap).start, at8(9, 0));
+    });
+
+    test('staying put right after a gap is a stop, not a 0 m walk', () {
+      // No saved places: seen once at 03:11, then twice in one spot a
+      // minute apart after an 8½ h dropout. Used to read "Walk · 0 m".
+      final a = HistoryPoint(51.5400, -0.1900, at8(3, 11));
+      final pts = [
+        a,
+        HistoryPoint(51.4950, -0.1100, at8(11, 42)),
+        HistoryPoint(51.4950, -0.1100, DateTime.utc(2026, 9, 20, 11, 43, 30)),
+      ];
+      final tl = HistoryTimeline.build(pts, []);
       expect(tl.map((e) => e.runtimeType), [Stay, Gap, Stay]);
-      expect((tl[1] as Gap).start, at8(8, 0));
-      expect((tl[1] as Gap).end, at8(11, 0));
+      expect(tl.whereType<Move>(), isEmpty);
+      expect((tl[0] as Stay).start, a.t);
+      expect((tl[2] as Stay).start, at8(11, 42));
+      expect((tl[2] as Stay).lat, closeTo(51.4950, 1e-9));
+    });
+
+    test('a stay\'s own edge point next to a gap is not shown twice', () {
+      final pts = [
+        at(home, at8(8, 0)),
+        at(home, at8(8, 10)), // 10 min at Home, then a dropout
+        at(work, at8(11, 0)),
+        at(work, at8(11, 30)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home, work]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Gap, Stay]);
+    });
+
+    test('moving after a gap is still a move', () {
+      final pts = [
+        at(home, at8(8, 0)),
+        at(home, at8(8, 10)),
+        away(at8(9, 0)), // back after 50 min, already out…
+        HistoryPoint(51.5074 + 0.018, -0.1278, at8(9, 5)), // …and moving
+      ];
+      final tl = HistoryTimeline.build(pts, [home]);
+      expect(tl.map((e) => e.runtimeType), [Stay, Gap, Move]);
+      expect((tl[2] as Move).distanceMeters, greaterThan(500));
     });
   });
 
