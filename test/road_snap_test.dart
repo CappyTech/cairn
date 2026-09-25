@@ -40,4 +40,30 @@ void main() {
     expect(RoadSnapService.parseRoute('{"code":"NoRoute"}'), isNull);
     expect(RoadSnapService.parseRoute('not json'), isNull);
   });
+
+  test('server body: mode name and lat,lng pairs, thinned to the cap', () {
+    final b = RoadSnapService.serverBody(TravelMode.cycle, line(3));
+    expect(b['mode'], 'cycle');
+    expect(b['points'], [
+      [51.5, -0.1],
+      [51.501, -0.1],
+      [51.502, -0.1],
+    ]);
+    final long = RoadSnapService.serverBody(TravelMode.vehicle, line(900));
+    expect(long['points'], hasLength(RoadSnapService.maxServerPoints));
+  });
+
+  test('parseServerLine reads the line, or null on anything else', () {
+    final l = RoadSnapService.parseServerLine({
+      'line': [
+        [51.5, -0.12],
+        [51.51, -0.13]
+      ]
+    })!;
+    expect(l.last.latitude, 51.51);
+    expect(l.last.longitude, -0.13);
+    expect(RoadSnapService.parseServerLine({'line': [[1, 2]]}), isNull);
+    expect(RoadSnapService.parseServerLine({'error': 'x'}), isNull);
+    expect(RoadSnapService.parseServerLine(null), isNull);
+  });
 }

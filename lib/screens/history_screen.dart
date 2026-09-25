@@ -12,6 +12,7 @@ import '../services/prefs.dart';
 import '../services/road_snap_service.dart';
 import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
+import '../widgets/history_settings_tiles.dart';
 import '../widgets/travel_mode_ui.dart';
 import 'places_screen.dart';
 
@@ -266,9 +267,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
         title: const Text('History'),
         actions: [
           IconButton(
-            tooltip: 'Retention settings',
+            tooltip: 'History settings',
             icon: const Icon(Icons.tune),
-            onPressed: _retentionSettings,
+            onPressed: _historySettings,
           ),
           if (_subjectId != null && _days.isNotEmpty)
             IconButton(
@@ -895,7 +896,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
   }
 
   /// Snap a trip to roads — after the user agrees to send its coordinates to
-  /// the routing server (once, or every time).
+  /// a router (my server's, else a public one), once or every time.
   Future<void> _snap(int i, Move m) async {
     if (!await Prefs.roadSnapAllowed()) {
       if (!mounted || await _askSnap() != true) return;
@@ -925,10 +926,11 @@ class _HistoryScreenState extends State<HistoryScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               const Text(
-                  'This sends this trip\'s coordinates — not who you are or '
-                  'who it is — to ${RoadSnapService.host}, a public routing '
-                  'server, unencrypted. Everything else in History stays on '
-                  'your devices.'),
+                  'This sends this trip\'s coordinates, without end-to-end '
+                  'encryption, to your Cairn server to match them to roads. '
+                  'If your server can\'t, they go to ${RoadSnapService.host}, '
+                  'a public routing server, without saying who you are or who '
+                  'it is. Everything else in History stays encrypted.'),
               const SizedBox(height: 8),
               CheckboxListTile(
                 contentPadding: EdgeInsets.zero,
@@ -974,19 +976,54 @@ class _HistoryScreenState extends State<HistoryScreen> {
 
   /// Let the user keep *less* history than the server does. Options are capped
   /// by the server's own policy (you can't keep more than it stores).
-  Future<void> _retentionSettings() async {
+  /// The retention choices this server allows. null = follow the server;
+  /// 0 = keep everything (only when the server keeps everything too).
+  List<({String label, int? value})> _retentionOptions() => [
+        (label: 'Follow server', value: null),
+        if (HistoryPolicy.serverDays == 0) (label: 'Keep everything', value: 0),
+        (label: 'Last 90 days', value: 90),
+        (label: 'Last 30 days', value: 30),
+        (label: 'Last 7 days', value: 7),
+      ];
+
+  /// History settings: how long to keep history, plus History's switches.
+  Future<void> _historySettings() async {
     final current = await Prefs.historyLocalRetentionDays();
-    final snapAllowed = await Prefs.roadSnapAllowed();
-    final serverDays = HistoryPolicy.serverDays;
-    // null = follow server; 0 = keep all (only offered if the server keeps all).
-    final options = <({String label, int? value})>[
-      (label: 'Follow server', value: null),
-      if (serverDays == 0) (label: 'Keep everything', value: 0),
-      (label: 'Last 90 days', value: 90),
-      (label: 'Last 30 days', value: 30),
-      (label: 'Last 7 days', value: 7),
-    ];
+    final label = _retentionOptions()
+            .where((o) => o.value == current)
+            .firstOrNull
+            ?.label ??
+        '$current days';
     if (!mounted) return;
+    await showModalBottomSheet<void>(
+      context: context,
+      showDragHandle: true,
+      builder: (context) => SafeArea(
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              ListTile(
+                leading: const Icon(Icons.auto_delete_outlined),
+                title: const Text('Keep history for'),
+                subtitle: Text(label),
+                trailing: const Icon(Icons.chevron_right),
+                onTap: () {
+                  Navigator.pop(context);
+                  _pickRetention(current);
+                },
+              ),
+              const HistorySettingsTiles(),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _pickRetention(int? current) async {
+    final serverDays = HistoryPolicy.serverDays;
     final picked = await showDialog<({String label, int? value})>(
       context: context,
       builder: (context) => SimpleDialog(
@@ -1002,26 +1039,15 @@ class _HistoryScreenState extends State<HistoryScreen> {
               style: TextStyle(color: context.cairn.muted, fontSize: 13),
             ),
           ),
-          for (final o in options)
+          for (final o in _retentionOptions())
             ListTile(
               leading: Icon(
                 o.value == current
                     ? Icons.radio_button_checked
                     : Icons.radio_button_unchecked,
-                
               ),
               title: Text(o.label),
               onTap: () => Navigator.pop(context, o),
-            ),
-          if (snapAllowed)
-            ListTile(
-              leading: const Icon(Icons.alt_route),
-              title: const Text('Ask before snapping trips to roads'),
-              subtitle: const Text('You chose not to be asked'),
-              onTap: () async {
-                await Prefs.setRoadSnapAllowed(false);
-                if (context.mounted) Navigator.pop(context);
-              },
             ),
         ],
       ),

@@ -1,6 +1,5 @@
 Cairn v0.0.22
 
-• Trips can now tell walking, cycling and driving apart using your phone's motion sensor, so a slow drive through town no longer shows as a bike ride. Turn it on in Settings → Places & history → Detect how you travel.
-• Applies to trips from then on.
-
-All end-to-end encrypted.
+• Trips can tell walking, cycling and driving apart using your phone's motion sensor, so a slow drive through town no longer shows as a bike ride. Turn it on in History → settings (the sliders button).
+• History's options now live there too; Settings is tidier.
+• Snap to roads can use your own Cairn server instead of a public one.
