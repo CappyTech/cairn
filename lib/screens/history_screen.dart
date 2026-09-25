@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:flutter_map/flutter_map.dart';
@@ -11,6 +12,7 @@ import '../services/places_service.dart';
 import '../services/prefs.dart';
 import '../services/road_snap_service.dart';
 import '../services/shared_places_service.dart';
+import '../services/snap_cache.dart';
 import '../theme/brand.dart';
 import '../widgets/history_settings_tiles.dart';
 import '../widgets/travel_mode_ui.dart';
@@ -164,6 +166,39 @@ class _HistoryScreenState extends State<HistoryScreen> {
       _loading = false;
     });
     _fitTo([for (final p in pts) LatLng(p.lat, p.lng)], 48);
+    unawaited(_autoSnap(gen));
+  }
+
+  /// With road snapping always allowed, snap the day's trips as it loads —
+  /// from the on-device cache where already done, else one at a time from
+  /// the router — dropping out if another day loads meanwhile.
+  Future<void> _autoSnap(int gen) async {
+    if (!await Prefs.roadSnapAllowed()) return;
+    final subject = _subjectId;
+    if (subject == null) return;
+    for (var i = 0; i < _timeline.length; i++) {
+      if (!mounted || gen != _loadGen) return;
+      final e = _timeline[i];
+      if (e is! Move || _snapped.containsKey(i)) continue;
+      if (e.path.length < 2 || e.distanceMeters < autoSnapMinMeters) continue;
+      final line = await _snappedLine(subject, e);
+      if (!mounted || gen != _loadGen) return;
+      if (line != null) setState(() => _snapped[i] = line);
+    }
+  }
+
+  /// Trips shorter than this aren't worth a router call.
+  static const autoSnapMinMeters = 200.0;
+
+  /// [m] snapped to roads: cached on this device, else from the router
+  /// (and then cached).
+  Future<List<LatLng>?> _snappedLine(String subject, Move m) async {
+    final key = SnapCache.keyFor(subject, m);
+    final cached = await SnapCache.get(key);
+    if (cached != null) return cached;
+    final line = await RoadSnapService.snap(m);
+    if (line != null) await SnapCache.put(key, line);
+    return line;
   }
 
   /// Move the camera once this frame's layout has settled AND flutter_map has
@@ -902,7 +937,10 @@ class _HistoryScreenState extends State<HistoryScreen> {
       if (!mounted || await _askSnap() != true) return;
     }
     setState(() => _snapping = true);
-    final line = await RoadSnapService.snap(m);
+    final subject = _subjectId;
+    final line = subject == null
+        ? await RoadSnapService.snap(m)
+        : await _snappedLine(subject, m);
     if (!mounted) return;
     setState(() {
       _snapping = false;

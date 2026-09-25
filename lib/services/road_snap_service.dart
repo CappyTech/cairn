@@ -23,8 +23,9 @@ abstract final class RoadSnapService {
   /// profiles as well as car. The fallback.
   static const host = 'routing.openstreetmap.de';
 
-  /// Map matching wants the trail as recorded, but within reason.
-  static const maxServerPoints = 500;
+  /// Map matching wants the trail as recorded (precise recording makes
+  /// dense trails), but within reason. The server allows up to 5000.
+  static const maxServerPoints = 2000;
 
   /// Public OSRM servers cap the waypoints per request.
   static const maxWaypoints = 25;
@@ -83,12 +84,15 @@ abstract final class RoadSnapService {
         TravelMode.vehicle => 'vehicle',
       };
 
-  /// The request body for my server's `/api/cairn/snap`. Pure.
+  /// The request body for my server's `/api/cairn/snap`: [lat, lng, epoch
+  /// seconds] per point — the times let the matcher rule out routes that
+  /// couldn't have been travelled in between. Pure.
   static Map<String, dynamic> serverBody(TravelMode mode, List<HistoryPoint> pts) =>
       {
         'mode': modeName(mode),
         'points': [
-          for (final p in waypoints(pts, max: maxServerPoints)) [p.lat, p.lng]
+          for (final p in waypoints(pts, max: maxServerPoints))
+            [p.lat, p.lng, p.t.millisecondsSinceEpoch ~/ 1000]
         ],
       };
 

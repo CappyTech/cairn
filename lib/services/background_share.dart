@@ -16,6 +16,7 @@ import 'history_policy.dart';
 import 'activity_sensor.dart';
 import 'history_service.dart';
 import 'pairing_service.dart';
+import 'precise_recorder.dart';
 import 'prefs.dart';
 import 'stale_alert_store.dart';
 import 'notification_service.dart';
@@ -198,6 +199,7 @@ void onStart(ServiceInstance service) async {
   Timer? tickTimer;
   service.on('stop').listen((_) {
     tickTimer?.cancel();
+    PreciseRecorder.instance.stop();
     service.stopSelf();
   });
 
@@ -365,6 +367,11 @@ void onStart(ServiceInstance service) async {
       await HistoryPolicy.refreshForBackground();
     } catch (_) {/* keep last tick's setting */}
     await publishOnce(strategy.accuracy);
+    // Precise trip recording: a GPS stream for History while moving (on its
+    // own; the sharing cadence above is unchanged).
+    try {
+      await PreciseRecorder.instance.update();
+    } catch (_) {/* best-effort */}
     await checkGeofencesOnce();
     // Content-free activity alerts (new pairing, contact went quiet) while the
     // app is closed — off entirely if the user turned them off.
