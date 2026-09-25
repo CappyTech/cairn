@@ -3,6 +3,7 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
 import '../services/pb_client.dart';
 import '../services/prefs.dart';
+import '../services/road_snap_service.dart';
 import '../theme/brand.dart';
 import '../widgets/motion_settings_tiles.dart';
 import '../widgets/restart_widget.dart';
@@ -44,7 +45,8 @@ Future<String?> showEditNameDialog(BuildContext context, String current) async {
 }
 
 /// Everything that used to live in Home's overflow menu, grouped:
-/// You (name, backup), Speed & direction, Places & history, App (layout,
+/// You (name, backup), Speed & direction, Places & history (incl. road
+/// snapping), App (layout,
 /// server, about) — plus
 /// the admin dashboard for admins. Home reloads name and layout on return.
 class SettingsScreen extends StatefulWidget {
@@ -58,6 +60,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
   String _name = '';
   HomeLayout _layout = HomeLayout.refined;
   String _version = '';
+  bool _roadSnap = false; // snap trips to roads without asking each time
 
   static const _layoutInfo = {
     HomeLayout.refined: (
@@ -86,17 +89,22 @@ class _SettingsScreenState extends State<SettingsScreen> {
   Future<void> _load() async {
     final name = await AuthService.displayName();
     final layout = await Prefs.homeLayout();
+    final roadSnap = await Prefs.roadSnapAllowed();
     final info = await PackageInfo.fromPlatform();
     if (!mounted) return;
     setState(() {
       _name = name;
       _layout = layout;
+      _roadSnap = roadSnap;
       _version = info.version;
     });
   }
 
-  void _open(Widget screen) => Navigator.push(
-      context, MaterialPageRoute(builder: (_) => screen));
+  /// Open [screen]; reload on return (History can change road snapping).
+  Future<void> _open(Widget screen) async {
+    await Navigator.push(context, MaterialPageRoute(builder: (_) => screen));
+    await _load();
+  }
 
   Future<void> _editName() async {
     final n = await showEditNameDialog(context, _name);
@@ -193,6 +201,18 @@ class _SettingsScreenState extends State<SettingsScreen> {
               () => _open(const PlacesScreen())),
           item(Icons.history, 'History & trips',
               () => _open(const HistoryScreen())),
+          SwitchListTile(
+            secondary: const Icon(Icons.alt_route),
+            title: const Text('Snap to roads without asking'),
+            subtitle: const Text('"Snap to roads" in History sends that '
+                "trip's coordinates, unencrypted, to "
+                '${RoadSnapService.host} (OpenStreetMap routing).'),
+            value: _roadSnap,
+            onChanged: (v) async {
+              await Prefs.setRoadSnapAllowed(v);
+              if (mounted) setState(() => _roadSnap = v);
+            },
+          ),
           header('App'),
           item(Icons.dashboard_customize_outlined, 'Home layout', _chooseLayout,
               subtitle: _layoutInfo[_layout]!.$2),

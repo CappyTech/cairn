@@ -224,6 +224,25 @@ void main() {
       expect(stop.end, base(30));
     });
 
+    test('latestMoves: newest first, capped', () {
+      final pts = [
+        at(home, base(0)),
+        away(base(5)),
+        cafe(base(10)),
+        cafe(base(20)),
+        cafe(base(30)),
+        away(base(35)),
+        at(home, base(40)),
+      ];
+      final tl = HistoryTimeline.build(pts, [home]);
+      final latest = HistoryTimeline.latestMoves(tl, 3);
+      expect(latest.length, 2);
+      expect(latest.first.start.isAfter(latest.last.start), isTrue);
+      expect(HistoryTimeline.latestMoves(tl, 1).single.start,
+          latest.first.start);
+      expect(HistoryTimeline.latestMoves([], 3), isEmpty);
+    });
+
     test('passing briefly through a spot is not a stay', () {
       final pts = [
         at(home, base(0)),

@@ -622,6 +622,10 @@ abstract final class HistoryTimeline {
       .whereType<Move>()
       .fold(0.0, (sum, m) => sum + m.distanceMeters);
 
+  /// Up to [n] of [timeline]'s moves, newest first. Pure.
+  static List<Move> latestMoves(List<TimelineEntry> timeline, int n) =>
+      timeline.whereType<Move>().toList().reversed.take(n).toList();
+
   /// Split a day's [pts] into stays, moves and gaps. Consecutive points in the
   /// same saved place, or within [stayRadiusMeters] of each other outside any
   /// place, form a cluster; a cluster is a stay when it lasts at least

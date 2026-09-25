@@ -1,13 +1,6 @@
-Cairn v0.0.20
+Cairn v0.0.21
 
-• History now records all day, not just while the app is open.
-• Trips coloured by walk, cycle or vehicle, with arrows and numbered stops.
-• Gaps in your data show as gaps, not long journeys.
-• Days run midnight to midnight, your time.
-• Scrub by time; tap a trip to focus it.
-• Optional: snap a trip to roads.
-• Fixed the History map sometimes staying blank.
-• Choose whether contacts see your speed and direction.
-• See-through pins on the map.
+• Your last few trips now show on Home, in every layout. Tap one to open it in History.
+• New setting: snap trips to roads without being asked each time (Settings → Places & history).
 
 All end-to-end encrypted.

@@ -12,6 +12,7 @@ import '../services/prefs.dart';
 import '../services/road_snap_service.dart';
 import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
+import '../widgets/travel_mode_ui.dart';
 import 'places_screen.dart';
 
 /// A person whose history I can view: me, or a paired contact.
@@ -29,7 +30,20 @@ class _Subject {
 class HistoryScreen extends StatefulWidget {
   /// Optionally open straight to a given subject (e.g. from a contact tile).
   final String? initialSubjectId;
-  const HistoryScreen({super.key, this.initialSubjectId});
+
+  /// Optionally open on this day ("YYYY-MM-DD") with the trip that starts at
+  /// [initialTripStart] focused (e.g. from Home's recent trips).
+  final String? initialDay;
+  final DateTime? initialTripStart;
+
+  const HistoryScreen(
+      {super.key,
+      this.initialSubjectId,
+      this.initialDay,
+      this.initialTripStart});
+
+  /// Friendly day label: Today, Yesterday, a weekday this week, else a date.
+  static String dayLabel(String key) => _HistoryScreenState._dayLabel(key);
 
   @override
   State<HistoryScreen> createState() => _HistoryScreenState();
@@ -53,6 +67,8 @@ class _HistoryScreenState extends State<HistoryScreen> {
   bool _snapping = false;
   bool _loading = true;
   int _loadGen = 0; // drops a day's load that finished after a newer one
+  late String? _openDay = widget.initialDay;
+  late DateTime? _openTrip = widget.initialTripStart;
 
   @override
   void initState() {
@@ -115,8 +131,19 @@ class _HistoryScreenState extends State<HistoryScreen> {
     }
     setState(() => _loading = true);
     _days = await _safe(HistoryService.availableDays(_subjectId!), <String>[]);
-    _day = _days.isNotEmpty ? _days.first : null;
+    // Opened on a day/trip: honour it on the first load only.
+    final wanted = _openDay;
+    final tripStart = _openTrip;
+    _openDay = null;
+    _openTrip = null;
+    _day = wanted != null && _days.contains(wanted)
+        ? wanted
+        : (_days.isNotEmpty ? _days.first : null);
     await _loadDay();
+    if (tripStart != null && _day == wanted && mounted) {
+      final i = _timeline.indexWhere((e) => e is Move && e.start == tripStart);
+      if (i >= 0) _focusMove(i, _timeline[i] as Move);
+    }
   }
 
   Future<void> _loadDay() async {
@@ -225,23 +252,9 @@ class _HistoryScreenState extends State<HistoryScreen> {
   static String _kmh(double mps) => '${(mps * 3.6).round()} km/h';
 
   // ---- travel modes ----
-  static Color _modeColor(TravelMode m) => switch (m) {
-        TravelMode.walk => Brand.lichen,
-        TravelMode.cycle => const Color(0xFFD9A441),
-        TravelMode.vehicle => const Color(0xFF4A86C5),
-      };
-
-  static IconData _modeIcon(TravelMode m) => switch (m) {
-        TravelMode.walk => Icons.directions_walk,
-        TravelMode.cycle => Icons.directions_bike,
-        TravelMode.vehicle => Icons.directions_car,
-      };
-
-  static String _modeName(TravelMode m) => switch (m) {
-        TravelMode.walk => 'Walk',
-        TravelMode.cycle => 'Cycle',
-        TravelMode.vehicle => 'Vehicle',
-      };
+  static Color _modeColor(TravelMode m) => m.color;
+  static IconData _modeIcon(TravelMode m) => m.icon;
+  static String _modeName(TravelMode m) => m.label;
 
   /// The timeline's stays, in order — their position is the stop's number.
   List<Stay> get _stays => _timeline.whereType<Stay>().toList();
