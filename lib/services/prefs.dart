@@ -34,6 +34,13 @@ class Prefs {
   static Future<void> setHomeLayout(HomeLayout v) async =>
       _s.write(key: 'home_layout', value: v.name);
 
+  /// Appearance: 'system' (default), 'light' or 'dark'.
+  static Future<String> themeMode() async =>
+      (await _s.read(key: 'theme_mode')) ?? 'system';
+
+  static Future<void> setThemeMode(String v) async =>
+      _s.write(key: 'theme_mode', value: v);
+
   /// Landscape Map first: whether the floating panel is open (default yes).
   static Future<bool> mapPanelOpen() async =>
       (await _s.read(key: 'map_panel_open')) != '0';

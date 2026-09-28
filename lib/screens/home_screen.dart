@@ -18,7 +18,9 @@ import '../services/prefs.dart';
 import '../services/foreground_share.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
+import 'history_screen.dart';
 import 'map_screen.dart';
+import 'places_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/background_share_ux.dart';
 import '../widgets/contact_tile.dart';
@@ -529,6 +531,37 @@ class _HomeScreenState extends State<HomeScreen> {
   void _openMap() => Navigator.push(
       context, MaterialPageRoute(builder: (_) => const MapScreen()));
 
+  void _openPlaces() => Navigator.push(
+      context, MaterialPageRoute(builder: (_) => const PlacesScreen()));
+
+  /// Trips may be edited or deleted there, so refresh Recent trips on return.
+  Future<void> _openHistory() async {
+    await Navigator.push(
+        context, MaterialPageRoute(builder: (_) => const HistoryScreen()));
+    if (mounted) setState(() => _tripsReload++);
+  }
+
+  /// Places and History, one tap from every layout.
+  Widget _shortcuts() => Row(
+        children: [
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _openPlaces,
+              icon: const Icon(Icons.place_outlined),
+              label: const Text('Places'),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: _openHistory,
+              icon: const Icon(Icons.history),
+              label: const Text('History'),
+            ),
+          ),
+        ],
+      );
+
   /// "Add person": show my code or scan theirs — one entry point for layouts
   /// that don't keep both buttons on screen.
   Future<void> _addPerson() async {
@@ -815,6 +848,8 @@ class _HomeScreenState extends State<HomeScreen> {
             side: BorderSide(color: context.cairn.outline)),
         child: _sharingRows().last, // the Status row
       ),
+      const SizedBox(height: 8),
+      _shortcuts(),
       const SizedBox(height: 12),
       Row(
         children: [
@@ -950,6 +985,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   ..._notices(),
                   _sharingPill(),
+                  const SizedBox(height: 8),
+                  _shortcuts(),
                   const SizedBox(height: 16),
                   Row(
                     children: [
@@ -1031,6 +1068,8 @@ class _HomeScreenState extends State<HomeScreen> {
                 ),
               ],
             ),
+            const SizedBox(height: 8),
+            _shortcuts(),
             const SizedBox(height: 16),
             ..._notices(),
             Card(
@@ -1098,6 +1137,8 @@ class _HomeScreenState extends State<HomeScreen> {
           children: [
             ..._notices(),
             _sharingPill(),
+            const SizedBox(height: 8),
+            _shortcuts(),
             const SizedBox(height: 20),
             _sectionTitle(_contacts.isEmpty
                 ? 'People'
