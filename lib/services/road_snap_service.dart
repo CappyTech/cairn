@@ -30,10 +30,17 @@ abstract final class RoadSnapService {
   /// Public OSRM servers cap the waypoints per request.
   static const maxWaypoints = 25;
 
+  /// Trains and planes don't follow roads, so they're never snapped.
+  static bool canSnap(TravelMode mode) =>
+      mode != TravelMode.train && mode != TravelMode.plane;
+
   static String profileFor(TravelMode mode) => switch (mode) {
         TravelMode.walk => 'routed-foot',
         TravelMode.cycle => 'routed-bike',
-        TravelMode.vehicle => 'routed-car',
+        TravelMode.vehicle ||
+        TravelMode.train ||
+        TravelMode.plane =>
+          'routed-car',
       };
 
   /// At most [max] of [path]'s points, evenly spread, always keeping both
@@ -81,7 +88,7 @@ abstract final class RoadSnapService {
   static String modeName(TravelMode mode) => switch (mode) {
         TravelMode.walk => 'walk',
         TravelMode.cycle => 'cycle',
-        TravelMode.vehicle => 'vehicle',
+        TravelMode.vehicle || TravelMode.train || TravelMode.plane => 'vehicle',
       };
 
   /// The request body for my server's `/api/cairn/snap`: [lat, lng, epoch
@@ -113,7 +120,7 @@ abstract final class RoadSnapService {
   /// else the public one. Null on any failure (offline, no route, servers
   /// busy) — the caller keeps the raw line.
   static Future<List<LatLng>?> snap(Move move) async {
-    if (move.path.length < 2) return null;
+    if (move.path.length < 2 || !canSnap(move.mode)) return null;
     return await _snapOnServer(move) ?? await _snapPublic(move);
   }
 

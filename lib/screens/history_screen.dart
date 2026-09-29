@@ -181,6 +181,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
       final e = _timeline[i];
       if (e is! Move || _snapped.containsKey(i)) continue;
       if (e.path.length < 2 || e.distanceMeters < autoSnapMinMeters) continue;
+      if (!RoadSnapService.canSnap(e.mode)) continue;
       final line = await _snappedLine(subject, e);
       if (!mounted || gen != _loadGen) return;
       if (line != null) setState(() => _snapped[i] = line);
@@ -819,7 +820,7 @@ class _HistoryScreenState extends State<HistoryScreen> {
                   height: 18,
                   child: CircularProgressIndicator(strokeWidth: 2)),
             )
-          else
+          else if (RoadSnapService.canSnap(m.mode))
             TextButton.icon(
               icon: Icon(snapped ? Icons.timeline : Icons.alt_route, size: 18),
               label: Text(snapped ? 'Show fixes' : 'Snap to roads'),

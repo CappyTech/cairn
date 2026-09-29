@@ -108,10 +108,29 @@ class Motion {
   static bool usesMph(String? countryCode) =>
       _mphCountries.contains(countryCode?.toUpperCase());
 
+  /// Whether [unit] means mph, with [SpeedUnit.auto] following the phone's
+  /// region ([countryCode]). Pure.
+  static bool mphFor(SpeedUnit unit, String? countryCode) => switch (unit) {
+        SpeedUnit.mph => true,
+        SpeedUnit.kmh => false,
+        SpeedUnit.auto => usesMph(countryCode),
+      };
+
   /// A short human speed ("12 mph", "20 km/h"); "still" under ~1 km/h.
   static String formatSpeed(double metresPerSecond, {required bool mph}) {
     if (metresPerSecond < 0.3) return 'still';
     final v = metresPerSecond * (mph ? 2.23694 : 3.6);
     return '${v.round()} ${mph ? 'mph' : 'km/h'}';
   }
+}
+
+/// How speeds are shown: from the phone's region, or fixed to mph / km/h.
+enum SpeedUnit {
+  auto,
+  mph,
+  kmh;
+
+  /// Stored name ↔ unit; anything unknown means [auto].
+  static SpeedUnit parse(String? v) =>
+      values.firstWhere((u) => u.name == v, orElse: () => auto);
 }
