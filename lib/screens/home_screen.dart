@@ -22,7 +22,7 @@ import 'map_screen.dart';
 import 'settings_screen.dart';
 import '../widgets/background_share_ux.dart';
 import '../widgets/contact_tile.dart';
-import '../widgets/recent_trips.dart';
+import '../widgets/recent_activity.dart';
 import '../theme/brand.dart';
 
 class HomeScreen extends StatefulWidget {
@@ -52,7 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
   HomeLayout _layout = HomeLayout.refined;
   bool _panelOpen = true; // landscape Map first: the floating panel
-  int _tripsReload = 0; // bumped on pull-to-refresh: reloads Recent trips
+  int _activityReload = 0; // bumped on pull-to-refresh: reloads recent places and trips
   // Wide layout: the people list points the side-by-side map at someone.
   final _mapFocus = ValueNotifier<String?>(null);
   static const _wideBreakpoint = 700.0;
@@ -196,7 +196,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// Pull-to-refresh: people, and Recent trips too.
   Future<void> _pullRefresh() {
-    setState(() => _tripsReload++);
+    setState(() => _activityReload++);
     return _refresh();
   }
 
@@ -834,7 +834,7 @@ class _HomeScreenState extends State<HomeScreen> {
       ),
       const SizedBox(height: 4),
       ..._people(focusable: focusable),
-      RecentTrips(reloadToken: _tripsReload),
+      RecentActivity(reloadToken: _activityReload),
       ];
 
   /// Logo + settings gear in a small floating pill (Map first).
@@ -969,7 +969,7 @@ class _HomeScreenState extends State<HomeScreen> {
                   ),
                   const SizedBox(height: 4),
                   ..._people(focusable: true),
-                  RecentTrips(reloadToken: _tripsReload),
+                  RecentActivity(reloadToken: _activityReload),
                 ],
               ),
             ),
@@ -1048,7 +1048,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'People'
                 : 'People (${_contacts.length})'),
             ..._people(),
-            RecentTrips(reloadToken: _tripsReload),
+            RecentActivity(reloadToken: _activityReload),
           ],
         ),
       ),
@@ -1103,7 +1103,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 ? 'People'
                 : 'People · ${_contacts.length}'),
             ..._people(),
-            RecentTrips(reloadToken: _tripsReload),
+            RecentActivity(reloadToken: _activityReload),
           ],
         ),
       ),

@@ -4,13 +4,12 @@ import '../services/auth_service.dart';
 import '../services/pb_client.dart';
 import '../services/prefs.dart';
 import '../theme/brand.dart';
+import '../theme/theme_controller.dart';
 import '../widgets/motion_settings_tiles.dart';
 import '../widgets/restart_widget.dart';
 import '../widgets/server_settings_dialog.dart';
 import 'admin_screen.dart';
 import 'backup_screen.dart';
-import 'history_screen.dart';
-import 'places_screen.dart';
 
 /// Ask for a new display name and save it. Returns the new name, or null if
 /// cancelled. Shared by Settings and Home's "Set your name" link.
@@ -44,8 +43,8 @@ Future<String?> showEditNameDialog(BuildContext context, String current) async {
 }
 
 /// Everything that used to live in Home's overflow menu, grouped:
-/// You (name, backup), Speed & direction, Places & history, App (layout,
-/// server, about) — plus
+/// You (name, backup), Speed & direction, App (appearance, layout, server,
+/// about) — plus
 /// the admin dashboard for admins. Home reloads name and layout on return.
 class SettingsScreen extends StatefulWidget {
   const SettingsScreen({super.key});
@@ -75,6 +74,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
       'Map first',
       'The live map is home, with a pull-up panel of people and settings.'
     ),
+  };
+
+  static const _themeInfo = {
+    ThemeMode.system: (Icons.brightness_auto_outlined, 'Match system'),
+    ThemeMode.light: (Icons.light_mode_outlined, 'Light'),
+    ThemeMode.dark: (Icons.dark_mode_outlined, 'Dark'),
   };
 
   @override
@@ -133,6 +138,35 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() => _layout = picked);
   }
 
+  Future<void> _chooseTheme() async {
+    final current = ThemeController.mode.value;
+    final picked = await showDialog<ThemeMode>(
+      context: context,
+      builder: (context) => SimpleDialog(
+        title: const Text('Appearance'),
+        children: [
+          RadioGroup<ThemeMode>(
+            groupValue: current,
+            onChanged: (v) => Navigator.pop(context, v),
+            child: Column(
+              children: [
+                for (final e in _themeInfo.entries)
+                  RadioListTile<ThemeMode>(
+                    value: e.key,
+                    secondary: Icon(e.value.$1),
+                    title: Text(e.value.$2),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+    if (picked == null || picked == current) return;
+    await ThemeController.set(picked);
+    if (mounted) setState(() {});
+  }
+
   Future<void> _serverSettings() async {
     final changed = await showServerSettingsDialog(context);
     if (changed && mounted) await RestartWidget.restart(context);
@@ -188,12 +222,10 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: 'Your recovery phrase'),
           header('Speed & direction'),
           const MotionSettingsTiles(),
-          header('Places & history'),
-          item(Icons.place_outlined, 'Places',
-              () => _open(const PlacesScreen())),
-          item(Icons.history, 'History', () => _open(const HistoryScreen()),
-              subtitle: 'Trips, how long to keep them, travel detection'),
           header('App'),
+          item(_themeInfo[ThemeController.mode.value]!.$1, 'Appearance',
+              _chooseTheme,
+              subtitle: _themeInfo[ThemeController.mode.value]!.$2),
           item(Icons.dashboard_customize_outlined, 'Home layout', _chooseLayout,
               subtitle: _layoutInfo[_layout]!.$2),
           item(Icons.dns_outlined, 'Server', _serverSettings,
