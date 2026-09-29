@@ -117,6 +117,14 @@ class Prefs {
   static Future<void> setActivityAlerts(bool v) async =>
       _s.write(key: 'activity_alerts', value: v ? '1' : '0');
 
+  /// The app's own short sounds (saved, connected). Default ON; alerts have
+  /// their own per-channel sounds, set in the phone's settings.
+  static Future<bool> soundEffects() async =>
+      (await _s.read(key: 'sound_effects')) != '0';
+
+  static Future<void> setSoundEffects(bool v) async =>
+      _s.write(key: 'sound_effects', value: v ? '1' : '0');
+
   /// This device's own display name, kept on-device (the server only ever holds
   /// an encrypted-to-self copy, so it can't read your name).
   static Future<String?> name() async => _s.read(key: 'display_name');

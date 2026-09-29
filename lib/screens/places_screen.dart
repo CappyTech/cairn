@@ -6,6 +6,7 @@ import '../services/location_service.dart';
 import '../services/notification_service.dart';
 import '../services/places_service.dart';
 import '../services/shared_places_service.dart';
+import '../services/sound_service.dart';
 import '../widgets/contact_picker.dart';
 import '../theme/brand.dart';
 import 'shared_pins_screen.dart';
@@ -293,6 +294,10 @@ class _PlaceEditorScreenState extends State<PlaceEditorScreen> {
       // So alerts can actually show — init also requests the notification
       // permission (Android 13+/iOS), which the user may not have granted yet.
       if (_alerts) await NotificationService.requestPermission();
+      // Alert on it right away, whichever screen opened the editor (Home's
+      // Places section doesn't reload the monitor the way Places does).
+      await GeofenceMonitor.instance.refreshPlaces();
+      SoundService.play(UiSound.tick);
       if (mounted) Navigator.pop(context, true);
     } catch (e) {
       if (!mounted) return;

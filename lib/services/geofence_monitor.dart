@@ -174,7 +174,10 @@ class GeofenceMonitor {
     await saveState(state);
     for (final t in alerts) {
       await NotificationService.show(
-          id: t.notifId, title: t.title, body: t.body);
+          kind: t.entered ? AlertKind.arrive : AlertKind.leave,
+          id: t.notifId,
+          title: t.title,
+          body: t.body);
     }
   }
 

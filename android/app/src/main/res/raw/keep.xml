@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- ic_stat_cairn is only referenced by name from Dart
-     (NotificationService), so tell the release resource shrinker to keep it. -->
+<!-- ic_stat_cairn and the cairn_* alert sounds are only referenced by name
+     from Dart (NotificationService), so tell the release resource shrinker to
+     keep them. -->
 <resources xmlns:tools="http://schemas.android.com/tools"
-    tools:keep="@drawable/ic_stat_cairn" />
+    tools:keep="@drawable/ic_stat_cairn,@raw/cairn_*" />
