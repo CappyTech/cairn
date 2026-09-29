@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'package:battery_plus/battery_plus.dart';
 import 'package:pocketbase/pocketbase.dart';
 import 'pb_client.dart';
 import 'auth_service.dart';
@@ -20,6 +21,8 @@ class ContactLocation {
   final String? label; // a status the SENDER chose to broadcast ("Hotel")
   final double? speed; // m/s — only if the sender chose to share it
   final double? heading; // course, degrees from north — only while moving
+  final int? battery; // 0–100 — only if the sender chose to share it
+  final bool charging; // plugged in (with [battery])
   final DateTime updated; // when they last shared (= presence signal)
 
   ContactLocation({
@@ -32,6 +35,8 @@ class ContactLocation {
     this.label,
     this.speed,
     this.heading,
+    this.battery,
+    this.charging = false,
     required this.updated,
   });
 }
@@ -94,7 +99,8 @@ class LocationSharingService {
   /// position is coarsened (~1 km) and accuracy, speed and heading are all
   /// dropped (a precise course/speed would undo the coarsening). [speed] (m/s)
   /// and [heading] (degrees) are included only when given — the caller has
-  /// already applied the user's share toggles and the trust gates. Pure.
+  /// already applied the user's share toggles and the trust gates. [battery]
+  /// (0–100) isn't location, so it's kept on approximate shares too. Pure.
   static Map<String, dynamic> buildPayload({
     required double lat,
     required double lng,
@@ -104,6 +110,8 @@ class LocationSharingService {
     String? label,
     double? speed,
     double? heading,
+    int? battery,
+    bool charging = false,
   }) {
     return {
       'lat': approximate ? coarse(lat) : lat,
@@ -118,30 +126,38 @@ class LocationSharingService {
         'spd': (speed.clamp(0, Motion.maxSpeed) * 10).round() / 10,
       if (!approximate && heading != null)
         'hdg': Motion.normalize(heading).round() % 360,
+      if (battery != null) 'bat': battery.clamp(0, 100),
+      if (battery != null && charging) 'chg': true,
     };
   }
 
-  /// The most bytes the optional motion fields can add to a payload's JSON:
-  /// `,"spd":350.0` (12) + `,"hdg":359` (10), with headroom.
-  static const _motionReserve = 32;
+  /// The most bytes the optional fields can add to a payload's JSON:
+  /// `,"spd":350.0` (12) + `,"hdg":359` (10) + `,"bat":100` (10) +
+  /// `,"chg":true` (11), with headroom.
+  static const _optionalReserve = 56;
+
+  /// Fields whose presence or width varies tick to tick, so they're left out
+  /// of the length target (see [encodePayload]).
+  static const _optionalFields = ['spd', 'hdg', 'bat', 'chg'];
 
   /// Payloads are padded to a multiple of this many bytes.
   static const _padBlock = 64;
 
   /// Encode [payload] as UTF-8 JSON, padded so its length doesn't depend on
-  /// whether the motion fields (`spd`, `hdg`) are present. The ciphertext size
+  /// the optional fields (`spd`, `hdg`, `bat`, `chg`). The ciphertext size
   /// is server-visible, and "has a heading" ≈ "is moving" — exactly the signal
-  /// the fixed publish cadence exists to hide (docs/metadata-privacy.md). The
-  /// target length is computed from the payload WITHOUT motion, plus a fixed
-  /// reserve, so moving and still encode to the same size. Pure.
+  /// the fixed publish cadence exists to hide (docs/metadata-privacy.md); a
+  /// battery level's width would likewise hint at how charged the phone is.
+  /// The target length is computed from the payload WITHOUT those fields, plus
+  /// a fixed reserve, so every combination encodes to the same size. Pure.
   static List<int> encodePayload(Map<String, dynamic> payload) {
-    final base = Map.of(payload)
-      ..remove('spd')
-      ..remove('hdg')
-      ..remove('pad');
+    final base = Map.of(payload)..remove('pad');
+    for (final f in _optionalFields) {
+      base.remove(f);
+    }
     final baseLen = utf8.encode(jsonEncode(base)).length;
     final target =
-        ((baseLen + _motionReserve + _padBlock) ~/ _padBlock) * _padBlock;
+        ((baseLen + _optionalReserve + _padBlock) ~/ _padBlock) * _padBlock;
     final withPad = {...payload, 'pad': ''};
     final len = utf8.encode(jsonEncode(withPad)).length;
     withPad['pad'] = ' ' * (target - len);
@@ -184,6 +200,8 @@ class LocationSharingService {
           : null,
       speed: (data['spd'] as num?)?.toDouble(),
       heading: (data['hdg'] as num?)?.toDouble(),
+      battery: (data['bat'] as num?)?.toInt().clamp(0, 100),
+      charging: data['chg'] == true,
       updated: DateTime.tryParse(updatedIso)?.toLocal() ?? DateTime.now(),
     );
   }
@@ -220,6 +238,18 @@ class LocationSharingService {
         ? Motion.course(
             speed: speed, heading: heading, headingAccuracy: headingAccuracy)
         : null;
+
+    // My battery, if I share it (read once; same for every recipient).
+    int? battery;
+    var charging = false;
+    if (await Prefs.shareBattery()) {
+      try {
+        final b = Battery();
+        battery = await b.batteryLevel;
+        final state = await b.batteryState;
+        charging = state == BatteryState.charging || state == BatteryState.full;
+      } catch (_) {/* no battery API here (web, desktop) — just omit it */}
+    }
 
     // The status to broadcast this tick: a manual status, else a contact-visible
     // place I'm inside. Computed once (same for every recipient).
@@ -271,6 +301,8 @@ class LocationSharingService {
             label: label,
             speed: shareSpeed,
             heading: shareHeading,
+            battery: battery,
+            charging: charging,
           ));
           final blob = await CryptoService.sealFor(peerKey, payload);
           final body = {

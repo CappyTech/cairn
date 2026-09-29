@@ -220,7 +220,7 @@ class _SettingsScreenState extends State<SettingsScreen> {
           item(Icons.key_outlined, 'Backup & restore',
               () => _open(const BackupScreen()),
               subtitle: 'Your recovery phrase'),
-          header('Speed & direction'),
+          header('Speed, direction & battery'),
           const MotionSettingsTiles(),
           header('App'),
           item(_themeInfo[ThemeController.mode.value]!.$1, 'Appearance',

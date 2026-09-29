@@ -537,8 +537,11 @@ class Stay extends TimelineEntry {
 
 /// How someone was getting about: from the phone's activity sensor where it
 /// reported, else guessed from speed (so a bus and a car look the same: both
-/// are [vehicle]).
-enum TravelMode { walk, cycle, vehicle }
+/// are [vehicle]). The sensor can't tell a train or plane from a car, so
+/// [train] and [plane] are only ever guessed, from a whole trip's average
+/// speed: faster than roads allow is a train, faster than rail is a plane. A
+/// slow train still reads as [vehicle].
+enum TravelMode { walk, cycle, vehicle, train, plane }
 
 /// Travel between two stays (or from the start / to the end of the trail).
 /// [from]/[to] are the saved places at either end, when there are any. Never
@@ -562,10 +565,13 @@ class Move extends TimelineEntry {
       ? 0
       : distanceMeters / duration.inSeconds;
 
-  /// What the activity sensor mostly said along the way, else a guess from
-  /// the average speed.
+  /// A train or plane when the average speed says so (the sensor would call
+  /// it a vehicle), else what the activity sensor mostly said along the way,
+  /// else a guess from the average speed.
   TravelMode get mode =>
-      HistoryTimeline.sensedMode(path) ?? HistoryTimeline.modeForSpeed(avgSpeedMps);
+      HistoryTimeline.fastMode(avgSpeedMps) ??
+      HistoryTimeline.sensedMode(path) ??
+      HistoryTimeline.modeForSpeed(avgSpeedMps);
 }
 
 /// A stretch with no location data (phone off, no signal, app killed) between
@@ -612,6 +618,20 @@ abstract final class HistoryTimeline {
   /// above which it's a vehicle (~25 km/h).
   static const cycleMps = 2.2;
   static const vehicleMps = 7.0;
+
+  /// Average trip speed (m/s) at or above which it was a train (~130 km/h:
+  /// quicker than a road trip averages), and at or above which it was a plane
+  /// (~250 km/h: quicker than a train trip averages, stops included).
+  static const trainMps = 36.0;
+  static const planeMps = 70.0;
+
+  /// [plane] or [train] for a trip averaging [avgMps], else null. Only for a
+  /// whole trip's average — single segments are too noisy. Pure.
+  static TravelMode? fastMode(double avgMps) => avgMps >= planeMps
+      ? TravelMode.plane
+      : avgMps >= trainMps
+          ? TravelMode.train
+          : null;
 
   static TravelMode modeForSpeed(double mps) => mps >= vehicleMps
       ? TravelMode.vehicle
@@ -891,6 +911,19 @@ abstract final class HistoryTimeline {
   static List<({TravelMode mode, List<HistoryPoint> points})> speedRuns(
       List<HistoryPoint> path) {
     final out = <({TravelMode mode, List<HistoryPoint> points})>[];
+    // A train or plane trip is one colour end to end (the speed of each
+    // stretch says nothing new, and a station stop isn't a walk).
+    if (path.length >= 2) {
+      var meters = 0.0;
+      for (var i = 0; i + 1 < path.length; i++) {
+        meters += PlacesService.distanceMeters(
+            path[i].lat, path[i].lng, path[i + 1].lat, path[i + 1].lng);
+      }
+      final secs = path.last.t.difference(path.first.t).inSeconds;
+      if (fastMode(secs <= 0 ? 0 : meters / secs) case final fast?) {
+        return [(mode: fast, points: [...path])];
+      }
+    }
     final sensed = sensedMode(path);
     for (var i = 0; i + 1 < path.length; i++) {
       final a = path[i], b = path[i + 1];

@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'motion.dart';
 import 'prefs.dart';
 
 /// The motion & direction toggles, as one immutable snapshot.
@@ -24,12 +25,20 @@ class MotionSettings {
   /// Contacts' shared speed / direction are drawn on my map.
   final bool showContactsMotion;
 
+  /// Contacts get my battery level (all shares; default on).
+  final bool shareBattery;
+
+  /// How I see speeds.
+  final SpeedUnit speedUnit;
+
   const MotionSettings({
     this.shareSpeed = false,
     this.shareHeading = false,
     this.showMyHeading = true,
     this.useCompass = true,
     this.showContactsMotion = true,
+    this.shareBattery = true,
+    this.speedUnit = SpeedUnit.auto,
   });
 
   MotionSettings copyWith({
@@ -38,6 +47,8 @@ class MotionSettings {
     bool? showMyHeading,
     bool? useCompass,
     bool? showContactsMotion,
+    bool? shareBattery,
+    SpeedUnit? speedUnit,
   }) =>
       MotionSettings(
         shareSpeed: shareSpeed ?? this.shareSpeed,
@@ -45,6 +56,8 @@ class MotionSettings {
         showMyHeading: showMyHeading ?? this.showMyHeading,
         useCompass: useCompass ?? this.useCompass,
         showContactsMotion: showContactsMotion ?? this.showContactsMotion,
+        shareBattery: shareBattery ?? this.shareBattery,
+        speedUnit: speedUnit ?? this.speedUnit,
       );
 
   /// Whether the compass sensor is needed at all.
@@ -61,6 +74,8 @@ class MotionSettings {
       showMyHeading: await Prefs.showMyHeading(),
       useCompass: await Prefs.useCompass(),
       showContactsMotion: await Prefs.showContactsMotion(),
+      shareBattery: await Prefs.shareBattery(),
+      speedUnit: SpeedUnit.parse(await Prefs.speedUnit()),
     );
     current.value = s;
     return s;
@@ -84,6 +99,12 @@ class MotionSettings {
     }
     if (next.showContactsMotion != prev.showContactsMotion) {
       await Prefs.setShowContactsMotion(next.showContactsMotion);
+    }
+    if (next.shareBattery != prev.shareBattery) {
+      await Prefs.setShareBattery(next.shareBattery);
+    }
+    if (next.speedUnit != prev.speedUnit) {
+      await Prefs.setSpeedUnit(next.speedUnit.name);
     }
   }
 }

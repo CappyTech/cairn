@@ -208,6 +208,24 @@ class Prefs {
   static Future<void> setShowContactsMotion(bool v) async =>
       _s.write(key: 'show_contacts_motion', value: v ? '1' : '0');
 
+  /// Speed units: 'auto' (from the phone's region, the default), 'mph' or
+  /// 'kmh'.
+  static Future<String> speedUnit() async =>
+      (await _s.read(key: 'speed_unit')) ?? 'auto';
+
+  static Future<void> setSpeedUnit(String v) async =>
+      _s.write(key: 'speed_unit', value: v);
+
+  // --- Battery --------------------------------------------------------------
+
+  /// Share my battery level with contacts (default ON; it rides the
+  /// E2E-encrypted location blob, precise and approximate shares alike).
+  static Future<bool> shareBattery() async =>
+      (await _s.read(key: 'share_battery')) != '0';
+
+  static Future<void> setShareBattery(bool v) async =>
+      _s.write(key: 'share_battery', value: v ? '1' : '0');
+
   // --- Shared status --------------------------------------------------------
 
   /// A short label I choose to broadcast to contacts alongside my location

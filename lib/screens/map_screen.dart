@@ -182,7 +182,18 @@ class _MapScreenState extends State<MapScreen> {
           course: _course, compass: compass, useCompass: _motion.useCompass)
       : null;
 
-  static final bool _mph = Motion.usesMph(
+  /// A contact's shared battery, e.g. "82%" or "82% charging"; null when they
+  /// don't share it.
+  static String? _battery(ContactLocation c) => switch (c.battery) {
+        null => null,
+        final b => c.charging ? '$b% charging' : '$b%',
+      };
+
+  /// Battery at or below this shows on a contact's map label, not just their
+  /// sheet.
+  static const _lowBattery = 20;
+
+  bool get _mph => Motion.mphFor(_motion.speedUnit,
       WidgetsBinding.instance.platformDispatcher.locale.countryCode);
 
   /// Centre on the contact named by [MapScreen.focus], if they're sharing.
@@ -375,6 +386,8 @@ class _MapScreenState extends State<MapScreen> {
         presenceLabel,
         ?where,
         if (speed != null && speed >= 0.3) Motion.formatSpeed(speed, mph: _mph),
+        if (c.battery case final b? when b <= _lowBattery && !c.charging)
+          '$b%',
       ].join(' · ');
       markers.add(Marker(
         point: LatLng(c.lat, c.lng),
@@ -840,6 +853,7 @@ class _MapScreenState extends State<MapScreen> {
                         Motion.formatSpeed(s, mph: _mph),
                       if (_contactMotion(c).heading case final h?)
                         'heading ${Motion.compassPoint(h)}',
+                      if (_battery(c) case final b?) 'battery $b',
                     ].join(' · '),
                     style: TextStyle(color: context.cairn.muted, fontSize: 13),
                   ),

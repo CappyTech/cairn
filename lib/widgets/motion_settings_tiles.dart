@@ -1,10 +1,11 @@
 import 'package:flutter/material.dart';
+import '../services/motion.dart';
 import '../services/motion_settings.dart';
 import '../theme/brand.dart';
 
-/// The motion & direction toggles, grouped by who sees the result: "Contacts
-/// see" (off by default — shared in the encrypted location) and "I see" (on
-/// by default — never leaves the device). Used by Settings and by the map's
+/// The motion, direction and battery toggles, grouped by who sees the result:
+/// "Contacts see" (shared in the encrypted location; speed and direction off
+/// by default, battery on) and "I see" (never leaves the device). Used by Settings and by the map's
 /// "You" sheet, bound to [MotionSettings.current] so both stay in sync.
 class MotionSettingsTiles extends StatelessWidget {
   /// Drop the ListTile side padding (for use inside an already-padded sheet).
@@ -66,6 +67,15 @@ class MotionSettingsTiles extends StatelessWidget {
                   style: TextStyle(fontSize: 11, color: context.cairn.muted),
                 ),
               ),
+            sw(
+              Icons.battery_std_outlined,
+              'Share my battery level',
+              s.shareBattery
+                  ? 'Contacts see your battery %, even on ~1 km sharing.'
+                  : "Contacts don't see your battery.",
+              s.shareBattery,
+              (v) => set(s.copyWith(shareBattery: v)),
+            ),
             sub('I SEE'),
             sw(
               Icons.navigation_outlined,
@@ -89,6 +99,25 @@ class MotionSettingsTiles extends StatelessWidget {
               'When a contact chooses to share them.',
               s.showContactsMotion,
               (v) => set(s.copyWith(showContactsMotion: v)),
+            ),
+            ListTile(
+              contentPadding: pad,
+              leading: const Icon(Icons.straighten),
+              title: const Text('Speed units'),
+              trailing: SegmentedButton<SpeedUnit>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(
+                    visualDensity: VisualDensity.compact,
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap),
+                segments: const [
+                  ButtonSegment(value: SpeedUnit.auto, label: Text('Auto')),
+                  ButtonSegment(value: SpeedUnit.mph, label: Text('mph')),
+                  ButtonSegment(value: SpeedUnit.kmh, label: Text('km/h')),
+                ],
+                selected: {s.speedUnit},
+                onSelectionChanged: (v) =>
+                    set(s.copyWith(speedUnit: v.first)),
+              ),
             ),
           ],
         );
