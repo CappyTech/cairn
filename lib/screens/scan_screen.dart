@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import '../services/pairing_service.dart';
+import '../services/sound_service.dart';
 import '../theme/brand.dart';
 
 /// Scans another device's pairing QR (camera), with a paste fallback for
@@ -27,6 +28,7 @@ class _ScanScreenState extends State<ScanScreen> {
     });
     try {
       final name = await PairingService.pairFromPayload(raw);
+      SoundService.play(UiSound.connected);
       if (mounted) Navigator.pop(context, name);
     } catch (e) {
       if (!mounted) return;

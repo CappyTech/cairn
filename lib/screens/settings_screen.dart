@@ -1,8 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
+import '../services/background_share.dart';
+import '../services/notification_service.dart';
 import '../services/pb_client.dart';
 import '../services/prefs.dart';
+import '../services/sound_service.dart';
 import '../theme/brand.dart';
 import '../theme/theme_controller.dart';
 import '../widgets/motion_settings_tiles.dart';
@@ -167,6 +170,38 @@ class _SettingsScreenState extends State<SettingsScreen> {
     if (mounted) setState(() {});
   }
 
+  /// Each alert's sound, to listen to, and the way to change or mute them:
+  /// they're per-channel, so the phone's notification settings own them.
+  Future<void> _alertSounds() => showDialog<void>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Alert sounds'),
+          contentPadding: const EdgeInsets.fromLTRB(8, 16, 8, 0),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              for (final k in AlertKind.values)
+                ListTile(
+                  title: Text(k.name),
+                  subtitle: Text(k.description,
+                      style: const TextStyle(fontSize: 12)),
+                  trailing: const Icon(Icons.play_circle_outline),
+                  onTap: () => SoundService.previewAlert(k.channel),
+                ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: BackgroundShare.openAppSettings,
+              child: const Text('Change in phone settings'),
+            ),
+            FilledButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Done')),
+          ],
+        ),
+      );
+
   Future<void> _serverSettings() async {
     final changed = await showServerSettingsDialog(context);
     if (changed && mounted) await RestartWidget.restart(context);
@@ -222,6 +257,26 @@ class _SettingsScreenState extends State<SettingsScreen> {
               subtitle: 'Your recovery phrase'),
           header('Speed & direction'),
           const MotionSettingsTiles(),
+          header('Sounds'),
+          FutureBuilder<bool>(
+            future: SoundService.enabled(),
+            builder: (context, snap) => SwitchListTile(
+              secondary: const Icon(Icons.volume_up_outlined),
+              title: const Text('Sound effects'),
+              subtitle: const Text(
+                  'Short sounds when you connect with someone or save '
+                  'something. Follows your ringer.'),
+              value: snap.data ?? true,
+              onChanged: (v) async {
+                await SoundService.setEnabled(v);
+                if (v) SoundService.play(UiSound.tick);
+                if (mounted) setState(() {});
+              },
+            ),
+          ),
+          item(Icons.notifications_active_outlined, 'Alert sounds',
+              _alertSounds,
+              subtitle: 'Arrivals, departures, quiet contacts, new contacts'),
           header('App'),
           item(_themeInfo[ThemeController.mode.value]!.$1, 'Appearance',
               _chooseTheme,

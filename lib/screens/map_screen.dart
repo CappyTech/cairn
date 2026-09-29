@@ -11,6 +11,7 @@ import '../services/background_share.dart';
 import '../services/compass_service.dart';
 import '../services/foreground_share.dart';
 import '../services/location_sharing_service.dart';
+import '../services/sound_service.dart';
 import '../services/motion.dart';
 import '../services/motion_settings.dart';
 import '../services/nickname_service.dart';
@@ -214,6 +215,7 @@ class _MapScreenState extends State<MapScreen> {
     for (final id in toNotify) {
       final name = names[id] ?? 'A contact';
       await NotificationService.show(
+        kind: AlertKind.quiet,
         id: NotificationService.idFor('stale:$id'),
         title: 'Contact went quiet',
         body: "$name hasn't shared their location in a while.",
@@ -991,6 +993,7 @@ class _MapScreenState extends State<MapScreen> {
                     final v = await _statusPrompt(status);
                     if (v == null) return;
                     await Prefs.setSharedStatus(v);
+                    if (v.trim().isNotEmpty) SoundService.play(UiSound.tick);
                     if (ctx.mounted) setSheet(() => status = v.trim());
                   },
                 ),

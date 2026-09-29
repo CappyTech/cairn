@@ -3,6 +3,7 @@ import 'package:flutter/services.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import '../services/pairing_service.dart';
+import '../services/sound_service.dart';
 import '../theme/brand.dart';
 import '../services/invite_service.dart';
 
@@ -37,6 +38,7 @@ class _QrScreenState extends State<QrScreen> {
 
   Future<void> _copy() => _invite((code) async {
         await Clipboard.setData(ClipboardData(text: code));
+        SoundService.play(UiSound.tick);
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
             content: Text('Invite copied — it works once and expires in 24h.')));

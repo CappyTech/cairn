@@ -301,6 +301,7 @@ void onStart(ServiceInstance service) async {
       final newlyPaired = await PairingService.processPendingRequests();
       for (final name in newlyPaired) {
         await NotificationService.show(
+          kind: AlertKind.contact,
           id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
           title: 'New contact',
           body: "You're now connected with $name.",
@@ -328,6 +329,7 @@ void onStart(ServiceInstance service) async {
       for (final id in toNotify) {
         final name = byId[id]?.name ?? 'A contact';
         await NotificationService.show(
+          kind: AlertKind.quiet,
           id: NotificationService.idFor('stale:$id'),
           title: 'Contact went quiet',
           body: "$name hasn't shared their location in a while.",

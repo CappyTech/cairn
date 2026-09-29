@@ -16,6 +16,7 @@ import '../services/location_sharing_service.dart';
 import '../services/presence.dart';
 import '../services/prefs.dart';
 import '../services/foreground_share.dart';
+import '../services/sound_service.dart';
 import 'qr_screen.dart';
 import 'scan_screen.dart';
 import 'map_screen.dart';
@@ -103,6 +104,7 @@ class _HomeScreenState extends State<HomeScreen> {
       if (await Prefs.activityAlerts()) {
         for (final name in newlyPaired) {
           await NotificationService.show(
+            kind: AlertKind.contact,
             id: NotificationService.idFor('pair:$name:${DateTime.now()}'),
             title: 'New contact',
             body: "You're now connected with $name.",
@@ -152,6 +154,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Future<void> _setStatus(String v) async {
     await Prefs.setSharedStatus(v);
+    if (v.trim().isNotEmpty) SoundService.play(UiSound.tick);
     if (mounted) setState(() => _status = v.trim());
   }
 
