@@ -38,11 +38,19 @@ class MapScreen extends StatefulWidget {
   final bool embedded;
   final double bottomInset;
 
-  /// Set to a contact's peer id to centre the map on them (the wide Home
-  /// layout's people list drives this).
+  /// Set to a contact's peer id to centre the map on them and open their
+  /// details (the Home people list drives this when the map is on screen).
   final ValueNotifier<String?>? focus;
+
+  /// A contact's peer id to show, details open, as soon as the map loads —
+  /// for opening the map from a people list.
+  final String? initialFocus;
   const MapScreen(
-      {super.key, this.embedded = false, this.bottomInset = 0, this.focus});
+      {super.key,
+      this.embedded = false,
+      this.bottomInset = 0,
+      this.focus,
+      this.initialFocus});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -71,10 +79,13 @@ class _MapScreenState extends State<MapScreen> {
 
   Future<void> Function()? _unsub;
   Timer? _staleTimer;
+  bool _loaded = false; // first batch of contacts' locations arrived?
+  String? _pendingFocus; // asked to show someone before they'd loaded
 
   @override
   void initState() {
     super.initState();
+    _pendingFocus = widget.initialFocus;
     _loadPlaces();
     _start();
   }
@@ -121,6 +132,13 @@ class _MapScreenState extends State<MapScreen> {
       if (!mounted) return;
       setState(() => _contacts = map);
       unawaited(_checkStale());
+      final wasLoaded = _loaded;
+      _loaded = true;
+      final pending = _pendingFocus;
+      if (pending != null && (!wasLoaded || map.containsKey(pending))) {
+        // After this frame, so the map has laid out before we move it.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _focusOn(pending));
+      }
     });
     if (mounted) {
       _unsub = unsub;
@@ -185,12 +203,30 @@ class _MapScreenState extends State<MapScreen> {
   static final bool _mph = Motion.usesMph(
       WidgetsBinding.instance.platformDispatcher.locale.countryCode);
 
-  /// Centre on the contact named by [MapScreen.focus], if they're sharing.
-  void _onFocus() {
-    final c = _contacts[widget.focus?.value];
-    if (c == null || !mounted) return;
+  void _onFocus() => _focusOn(widget.focus?.value);
+
+  /// Centre on a contact and open their details. Before their locations have
+  /// loaded, remember who and do it on arrival; once loaded, someone with no
+  /// location gets a short note instead.
+  void _focusOn(String? peerId) {
+    if (peerId == null || !mounted) return;
+    final c = _contacts[peerId];
+    if (c == null) {
+      if (!_loaded) {
+        _pendingFocus = peerId;
+        return;
+      }
+      _pendingFocus = null;
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("They haven't shared a location with you yet.")));
+      return;
+    }
+    _pendingFocus = null;
     setState(() => _follow = false);
-    _map.move(LatLng(c.lat, c.lng), math.max(_map.camera.zoom, 15));
+    // Sit them in the upper part of the map, clear of the details sheet.
+    _map.move(LatLng(c.lat, c.lng), math.max(_map.camera.zoom, 15),
+        offset: Offset(0, -_map.camera.size.height / 4));
+    _openContactSheet(c);
   }
 
   /// Fire a one-off local notification when a contact crosses into "stale"
