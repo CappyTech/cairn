@@ -234,6 +234,21 @@ class Prefs {
   static Future<void> setShareBattery(bool v) async =>
       _s.write(key: 'share_battery', value: v ? '1' : '0');
 
+  // --- Pause sharing --------------------------------------------------------
+
+  /// When a "pause sharing" ends (UTC ISO-8601), or null when not paused. See
+  /// [SharingPause], which is how the rest of the app reads it.
+  static Future<String?> sharingPausedUntil() async =>
+      _s.read(key: 'sharing_paused_until');
+
+  static Future<void> setSharingPausedUntil(String? v) async {
+    if (v == null) {
+      await _s.delete(key: 'sharing_paused_until');
+    } else {
+      await _s.write(key: 'sharing_paused_until', value: v);
+    }
+  }
+
   // --- Shared status --------------------------------------------------------
 
   /// A short label I choose to broadcast to contacts alongside my location

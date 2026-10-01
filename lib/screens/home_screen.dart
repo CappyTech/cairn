@@ -15,6 +15,7 @@ import '../services/history_policy.dart';
 import '../services/location_sharing_service.dart';
 import '../services/presence.dart';
 import '../services/prefs.dart';
+import '../services/sharing_pause.dart';
 import '../services/foreground_share.dart';
 import '../services/sound_service.dart';
 import 'qr_screen.dart';
@@ -51,6 +52,7 @@ class _HomeScreenState extends State<HomeScreen> {
   bool _approxOnly = false;
   bool _activityAlerts = true; // notify on new pairing / contact going quiet
   String _status = ''; // my broadcast status label ("Hotel"); '' = none
+  DateTime? _pausedUntil; // sharing paused until then; null = sharing
   HomeLayout _layout = HomeLayout.refined;
   bool _panelOpen = true; // landscape Map first: the floating panel
   int _activityReload = 0; // bumped on pull-to-refresh: reloads recent places and trips
@@ -84,6 +86,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _layout = await Prefs.homeLayout();
     _panelOpen = await Prefs.mapPanelOpen();
     _status = await Prefs.sharedStatus() ?? '';
+    _pausedUntil = await SharingPause.until();
     _myName = await AuthService.displayName();
     if (mounted) setState(() {});
     // Watch for contacts arriving at / leaving my places, app-wide (not just on
@@ -580,6 +583,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
   /// One-line summary of how I'm sharing, e.g. "Sharing while open · precise".
   String _sharingSummary() {
+    if (_paused) return 'Sharing paused ${_pauseEnds()}';
     if (ForegroundShare.instance.error.value != null) {
       return 'Not sharing · location unavailable';
     }
@@ -588,6 +592,92 @@ class _HomeScreenState extends State<HomeScreen> {
     final status = _status.isEmpty ? '' : ' · "$_status"';
     return 'Sharing $when · $how$status';
   }
+
+  // A pause runs out by itself; the 30 s presence timer re-renders this.
+  bool get _paused => SharingPause.active(_pausedUntil, DateTime.now());
+
+  /// "until 15:40", "until tomorrow, 08:00", "until you resume".
+  String _pauseEnds() => SharingPause.describe(_pausedUntil!, DateTime.now(),
+      time: (t) => MaterialLocalizations.of(context).formatTimeOfDay(
+          TimeOfDay.fromDateTime(t),
+          alwaysUse24HourFormat: MediaQuery.alwaysUse24HourFormatOf(context)));
+
+  /// Ask how long for, then pause: my shares are deleted at once, and none
+  /// are sent (here or by background sharing) until it ends.
+  Future<void> _pauseSharing() async {
+    final now = DateTime.now();
+    final until = await showModalBottomSheet<DateTime>(
+      context: context,
+      showDragHandle: true,
+      builder: (ctx) => SingleChildScrollView(child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Padding(
+              padding: const EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                "Nobody sees where you are while sharing's paused. Your own "
+                'History keeps recording.',
+                style: TextStyle(color: context.cairn.muted, fontSize: 13),
+              ),
+            ),
+            for (final (label, at) in [
+              ('For 1 hour', now.add(const Duration(hours: 1))),
+              ('For 3 hours', now.add(const Duration(hours: 3))),
+              ('Until tomorrow morning', SharingPause.tomorrowMorning(now)),
+              ('Until I resume', SharingPause.forever),
+            ])
+              ListTile(
+                leading: Icon(at == SharingPause.forever
+                    ? Icons.pause_circle_outline
+                    : Icons.timer_outlined),
+                title: Text(label),
+                onTap: () => Navigator.pop(ctx, at),
+              ),
+          ],
+        ),
+      )),
+    );
+    if (until == null) return;
+    await SharingPause.pauseUntil(until);
+    if (mounted) setState(() => _pausedUntil = until);
+    try {
+      await LocationSharingService.withdrawAll();
+    } catch (_) {/* offline — the next sharing tick clears them instead */}
+  }
+
+  Future<void> _resumeSharing() async {
+    await SharingPause.resume();
+    if (mounted) setState(() => _pausedUntil = null);
+    await ForegroundShare.instance.publishNow(); // don't wait for the tick
+  }
+
+  /// Pause sharing for a while / resume. [after] as for [_sharingRows].
+  Widget _pauseRow({VoidCallback? after}) => ListTile(
+        leading: Icon(_paused ? Icons.pause_circle : Icons.pause_circle_outline,
+            color: _paused ? Theme.of(context).colorScheme.error : null),
+        title: Text(_paused ? 'Sharing paused' : 'Pause sharing'),
+        subtitle: Text(
+            _paused
+                ? 'Nobody can see you ${_pauseEnds()}'
+                : 'Hide your location from everyone for a while',
+            style: const TextStyle(fontSize: 12)),
+        trailing: _paused
+            ? TextButton(
+                onPressed: () async {
+                  await _resumeSharing();
+                  if (mounted) after?.call();
+                },
+                child: const Text('Resume'))
+            : null,
+        onTap: _paused
+            ? null
+            : () async {
+                await _pauseSharing();
+                if (mounted) after?.call();
+              },
+      );
 
   Future<void> _setApprox(bool v) async {
     await Prefs.setApproxOnly(v);
@@ -607,6 +697,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
 
     return [
+      _pauseRow(after: after),
       if (_bgSupported)
         SwitchListTile(
           value: _bgEnabled,
@@ -765,8 +856,9 @@ class _HomeScreenState extends State<HomeScreen> {
                   Container(
                     width: 8,
                     height: 8,
-                    decoration: const BoxDecoration(
-                        color: Brand.lichen, shape: BoxShape.circle),
+                    decoration: BoxDecoration(
+                        color: _paused ? Brand.stone : Brand.lichen,
+                        shape: BoxShape.circle),
                   ),
                   const SizedBox(width: 10),
                   Expanded(
@@ -831,7 +923,7 @@ class _HomeScreenState extends State<HomeScreen> {
         shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(12),
             side: BorderSide(color: context.cairn.outline)),
-        child: _sharingRows().last, // the Status row
+        child: _divided([_pauseRow(), _sharingRows().last]), // + the Status row
       ),
       const SizedBox(height: 12),
       Row(

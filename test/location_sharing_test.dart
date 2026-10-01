@@ -27,6 +27,23 @@ void main() {
       );
     });
 
+    test('a global pause clears everyone, whatever their setting', () {
+      for (final (precision, status) in [
+        ('precise', 'active'),
+        ('approximate', 'active'),
+        ('precise', 'key_changed'),
+      ]) {
+        expect(
+          LocationSharingService.shareActionFor(
+              precision: precision,
+              status: status,
+              approxOnly: false,
+              paused: true),
+          ShareAction.clearAndSkip,
+        );
+      }
+    });
+
     test('precise → sendPrecise', () {
       expect(
         LocationSharingService.shareActionFor(
