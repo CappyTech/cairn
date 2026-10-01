@@ -9,6 +9,7 @@ import 'motion.dart';
 import 'nickname_service.dart';
 import 'places_service.dart';
 import 'prefs.dart';
+import 'sharing_pause.dart';
 
 /// A decrypted location received from a paired contact.
 class ContactLocation {
@@ -70,7 +71,10 @@ class LocationSharingService {
     required String precision,
     required String status,
     required bool approxOnly,
+    bool paused = false,
   }) {
+    // Sharing paused for everyone: clear what's shared, whoever it's to.
+    if (paused) return ShareAction.clearAndSkip;
     // Key changed and not re-verified: don't publish to a key we don't trust
     // (existing shares stay as-is, under the old key).
     if (status == 'key_changed') return ShareAction.skip;
@@ -226,6 +230,7 @@ class LocationSharingService {
     final me = AuthService.currentUser;
     if (me == null) return;
     final approxOnly = await Prefs.approxOnly();
+    final paused = await SharingPause.isPaused();
     final contacts = await PairingService.myContacts();
     final ts = DateTime.now().toUtc().toIso8601String();
 
@@ -280,6 +285,7 @@ class LocationSharingService {
         precision: c.getStringValue('precision'),
         status: c.getStringValue('status'),
         approxOnly: approxOnly,
+        paused: paused,
       );
       final existing = existingByRecipient[peerId];
       final op = shareOpFor(action, existing != null);
@@ -318,10 +324,23 @@ class LocationSharingService {
       }
     }
 
-    // Presence heartbeat (best-effort).
+    // Presence heartbeat (best-effort). None while paused: a pause shouldn't
+    // still say I'm active.
+    if (paused) return;
     try {
       await pb.collection('users').update(me.id, body: {'last_seen': ts});
     } catch (_) {}
+  }
+
+  /// Delete every location I've shared, at once (pausing sharing), rather
+  /// than waiting for the next publish tick to clear them.
+  static Future<void> withdrawAll() async {
+    final me = AuthService.currentUser;
+    if (me == null) return;
+    for (final s in await pb.collection('location_shares').getFullList(
+        filter: 'sender = "${me.id}"')) {
+      await pb.collection('location_shares').delete(s.id);
+    }
   }
 
   /// Resolve each contact's display name (local nickname wins over their own

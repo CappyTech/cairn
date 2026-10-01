@@ -65,6 +65,13 @@ class ForegroundShare with WidgetsBindingObserver {
     await _resume(askPermission: true);
   }
 
+  /// Share straight away rather than at the next tick (e.g. on resuming
+  /// after a pause). No-op without a fix yet.
+  Future<void> publishNow() async {
+    final p = position.value;
+    if (p != null) await _publish(p);
+  }
+
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     switch (state) {
