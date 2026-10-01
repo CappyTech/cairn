@@ -56,6 +56,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int _activityReload = 0; // bumped on pull-to-refresh: reloads recent places and trips
   // Wide layout: the people list points the side-by-side map at someone.
   final _mapFocus = ValueNotifier<String?>(null);
+  final _sheet = DraggableScrollableController(); // Map first's pull-up panel
+  static const _sheetMin = 0.14;
   static const _wideBreakpoint = 700.0;
   // Background sharing was switched off because its notification was hidden.
   bool _bgHidden = false;
@@ -266,6 +268,7 @@ class _HomeScreenState extends State<HomeScreen> {
     _unsubShares?.call();
     _presenceTimer?.cancel();
     _mapFocus.dispose();
+    _sheet.dispose();
     _lifecycle.dispose();
     ForegroundShare.instance.error.removeListener(_onShareError);
     ForegroundShare.instance.stop();
@@ -307,13 +310,25 @@ class _HomeScreenState extends State<HomeScreen> {
       onRename: () => _renameContact(c, name),
       onToggleHistory: () => _toggleContact(peerId, history: !ctl.history),
       onToggleAlerts: () => _toggleContact(peerId, alerts: !ctl.alerts),
-      onTap: focusable
-          ? () {
-              _mapFocus.value = null; // re-tapping the same person re-centres
-              _mapFocus.value = peerId;
-            }
-          : null,
+      onTap: () => _showOnMap(peerId, inline: focusable),
     );
+  }
+
+  /// Show someone on the map with their details open: on the map beside the
+  /// list when there is one ([inline]), else on the full map screen.
+  void _showOnMap(String peerId, {required bool inline}) {
+    if (!inline) {
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => MapScreen(initialFocus: peerId)));
+      return;
+    }
+    // Map first on a phone: drop the panel out of the way of the map.
+    if (_sheet.isAttached) {
+      _sheet.animateTo(_sheetMin,
+          duration: const Duration(milliseconds: 250), curve: Curves.easeOut);
+    }
+    _mapFocus.value = null; // re-tapping the same person re-centres
+    _mapFocus.value = peerId;
   }
 
   Future<void> _toggleContact(String peerId, {bool? history, bool? alerts}) async {
@@ -1124,11 +1139,15 @@ class _HomeScreenState extends State<HomeScreen> {
           const peek = 0.34;
           return Stack(
             children: [
-              MapScreen(embedded: true, bottomInset: box.maxHeight * peek),
+              MapScreen(
+                  embedded: true,
+                  bottomInset: box.maxHeight * peek,
+                  focus: _mapFocus),
               SafeArea(child: _floatingBar()),
               DraggableScrollableSheet(
+                controller: _sheet,
                 initialChildSize: peek,
-                minChildSize: 0.14,
+                minChildSize: _sheetMin,
                 maxChildSize: 0.9,
                 snap: true,
                 // Floats like the top bar: inset from the edges, fully rounded.
@@ -1155,7 +1174,7 @@ class _HomeScreenState extends State<HomeScreen> {
                               borderRadius: BorderRadius.circular(2)),
                         ),
                       ),
-                      ..._mapPanel(),
+                      ..._mapPanel(focusable: true),
                     ],
                   ),
                 ))),
