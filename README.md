@@ -89,6 +89,12 @@ GitHub Actions (`.github/workflows/release.yml`):
 - [Privacy policy](https://cairn.cappylabs.uk/privacy)
 - [Delete your data](https://cairn.cappylabs.uk/delete)
 
+## Licence
+
+Cairn is free software under the [GNU Affero General Public License v3.0](LICENSE)
+(AGPL-3.0). If you run a modified Cairn server for others to use, you must
+offer them the source of your changes.
+
 ---
 
 <div align="center"><em>Cairn — your location, for the few you trust.</em></div>
