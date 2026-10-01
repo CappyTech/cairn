@@ -9,6 +9,7 @@ import 'package:latlong2/latlong.dart';
 import 'package:pocketbase/pocketbase.dart';
 import '../services/background_share.dart';
 import '../services/compass_service.dart';
+import '../services/directions.dart';
 import '../services/foreground_share.dart';
 import '../services/location_sharing_service.dart';
 import '../services/sound_service.dart';
@@ -341,6 +342,8 @@ class _MapScreenState extends State<MapScreen> {
             width: 200,
             height: 60,
             alignment: Alignment.topCenter,
+            child: GestureDetector(
+            onTap: () => _openSharedPinSheet(p),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -385,8 +388,56 @@ class _MapScreenState extends State<MapScreen> {
                 ),
               ],
             ),
+            ),
           ),
       ];
+
+  /// Open directions in the phone's maps app, or say why not.
+  Future<void> _directions(double lat, double lng, String label) async {
+    if (await Directions.open(lat, lng, label: label) || !mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No maps app could open directions.')));
+  }
+
+  /// Tap a shared pin → who shared it, their note, and directions.
+  Future<void> _openSharedPinSheet(SharedPin p) => showModalBottomSheet<void>(
+        context: context,
+        showDragHandle: true,
+        builder: (ctx) => SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.fromLTRB(20, 0, 20, 16),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(p.name,
+                    style: const TextStyle(
+                        fontSize: 18, fontWeight: FontWeight.w600)),
+                const SizedBox(height: 4),
+                Text(
+                  [
+                    'from ${p.sharerName.isEmpty ? 'a contact' : p.sharerName}',
+                    if (_me != null)
+                      _formatDistance(PlacesService.distanceMeters(
+                          _me!.latitude, _me!.longitude, p.lat, p.lng)),
+                    ?p.note,
+                  ].join(' · '),
+                  style: TextStyle(color: context.cairn.muted, fontSize: 13),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.tonalIcon(
+                    onPressed: () => _directions(p.lat, p.lng, p.name),
+                    icon: const Icon(Icons.directions),
+                    label: const Text('Directions'),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
 
   /// A contact's shared motion worth drawing: only if I've chosen to see it
   /// and their share is recent. Either field may be null.
@@ -934,6 +985,17 @@ class _MapScreenState extends State<MapScreen> {
                             rec!.set('precision', s.first);
                             setSheet(() {});
                           },
+                  ),
+                  const SizedBox(height: 8),
+                  SizedBox(
+                    width: double.infinity,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _directions(c.lat, c.lng, name),
+                      icon: const Icon(Icons.directions),
+                      label: Text(c.approximate
+                          ? 'Directions (approximate area)'
+                          : 'Directions'),
+                    ),
                   ),
                   const SizedBox(height: 8),
                   Row(

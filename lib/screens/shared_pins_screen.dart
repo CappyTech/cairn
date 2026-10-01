@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../services/directions.dart';
 import '../services/shared_places_service.dart';
 import '../theme/brand.dart';
 
@@ -134,6 +135,18 @@ class _SharedPinsScreenState extends State<SharedPinsScreen> {
               'from ${p.sharerName.isEmpty ? 'a contact' : p.sharerName}',
               if (p.note != null) p.note!,
             ].join(' · '),
+          ),
+          trailing: IconButton(
+            tooltip: 'Directions',
+            icon: const Icon(Icons.directions),
+            onPressed: () async {
+              if (await Directions.open(p.lat, p.lng, label: p.name) ||
+                  !mounted) {
+                return;
+              }
+              ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+                  content: Text('No maps app could open directions.')));
+            },
           ),
         ),
       );
