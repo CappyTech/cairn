@@ -18,10 +18,10 @@ By [CappyLabs](https://cairn.cappylabs.uk).
 
 <br>
 
-<img src="docs/readme/home.jpg" alt="Home: your people and sharing settings" width="200">&nbsp;
-<img src="docs/readme/map.jpg" alt="Live map with three people sharing" width="200">&nbsp;
-<img src="docs/readme/precision.jpg" alt="Choosing how precisely to share with one person" width="200">&nbsp;
-<img src="docs/readme/backup.jpg" alt="Backup and restore with a recovery phrase" width="200">
+<img src="docs/readme/home.jpg" alt="Home: your people and sharing settings" width="180">&nbsp;
+<img src="docs/readme/map.jpg" alt="Live map with three people sharing" width="180">&nbsp;
+<img src="docs/readme/precision.jpg" alt="Choosing how precisely to share with one person" width="180">&nbsp;
+<img src="docs/readme/backup.jpg" alt="Backup and restore with a recovery phrase" width="180">
 
 </div>
 
