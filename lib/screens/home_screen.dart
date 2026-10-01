@@ -902,7 +902,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       body: Stack(
         children: [
-          MapScreen(embedded: true, focus: _mapFocus),
+          MapScreen(embedded: true, focus: _mapFocus, peopleStrip: false),
           SafeArea(
             child: SizedBox(
               width: 420, // fits the three chips on one line
@@ -993,7 +993,7 @@ class _HomeScreenState extends State<HomeScreen> {
             ),
           ),
           VerticalDivider(width: 1, color: context.cairn.outline),
-          Expanded(child: MapScreen(embedded: true, focus: _mapFocus)),
+          Expanded(child: MapScreen(embedded: true, focus: _mapFocus, peopleStrip: false)),
         ],
       ),
     );

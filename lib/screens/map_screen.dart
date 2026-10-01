@@ -46,12 +46,17 @@ class MapScreen extends StatefulWidget {
   /// A contact's peer id to show, details open, as soon as the map loads —
   /// for opening the map from a people list.
   final String? initialFocus;
+
+  /// A row of people chips along the bottom for jumping between them. Off
+  /// where a people list already sits beside the map.
+  final bool peopleStrip;
   const MapScreen(
       {super.key,
       this.embedded = false,
       this.bottomInset = 0,
       this.focus,
-      this.initialFocus});
+      this.initialFocus,
+      this.peopleStrip = true});
 
   @override
   State<MapScreen> createState() => _MapScreenState();
@@ -561,10 +566,19 @@ class _MapScreenState extends State<MapScreen> {
   @override
   Widget build(BuildContext context) {
     final fabs = _fabs();
+    final strip = _showStrip
+        ? Positioned(
+            left: 0,
+            right: 80, // clear of the buttons
+            bottom: widget.bottomInset + 16,
+            child: _peopleStrip(),
+          )
+        : null;
     if (widget.embedded) {
       return Stack(
         children: [
           _body(),
+          ?strip,
           if (fabs != null)
             Positioned(
               right: 16,
@@ -578,8 +592,47 @@ class _MapScreenState extends State<MapScreen> {
       appBar: AppBar(
         title: Text('Map · ${_contacts.length} sharing'),
       ),
-      body: _body(),
+      body: Stack(children: [_body(), ?strip]),
       floatingActionButton: fabs,
+    );
+  }
+
+  bool get _showStrip => widget.peopleStrip && _contacts.isNotEmpty;
+  static const _stripHeight = 40.0;
+
+  /// Everyone sharing with me, freshest first; tap one to show them with
+  /// their details open.
+  Widget _peopleStrip() {
+    final people = _contacts.values.toList()
+      ..sort((a, b) => b.updated.compareTo(a.updated));
+    final now = DateTime.now();
+    return SizedBox(
+      height: _stripHeight,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        itemCount: people.length,
+        separatorBuilder: (_, _) => const SizedBox(width: 8),
+        itemBuilder: (context, i) {
+          final c = people[i];
+          final pres = Presence.describe(updated: c.updated, now: now);
+          return ActionChip(
+            elevation: 2,
+            backgroundColor: context.cairn.card,
+            side: BorderSide(color: context.cairn.outline),
+            shape: const StadiumBorder(),
+            avatar: Container(
+              width: 8,
+              height: 8,
+              decoration: BoxDecoration(
+                  color: _presenceColor(pres.level), shape: BoxShape.circle),
+            ),
+            label: Text(c.name),
+            tooltip: '${c.name} · ${pres.label}',
+            onPressed: () => _focusOn(c.senderId),
+          );
+        },
+      ),
     );
   }
 
@@ -680,13 +733,15 @@ class _MapScreenState extends State<MapScreen> {
     ],
   );
 
-  Widget? _fabs() => _me == null
+  // Follow and centre need my position; fitting only needs someone to fit.
+  Widget? _fabs() => _me == null && _contacts.isEmpty
       ? null
       : Column(
           mainAxisSize: MainAxisSize.min,
           children: [
             // Follow: keep the map on me as I move (pairs with the heading
             // cone). Highlighted when on.
+            if (_me != null) ...[
             FloatingActionButton.small(
               heroTag: 'follow',
               tooltip: _follow ? 'Stop following' : 'Follow me',
@@ -696,15 +751,17 @@ class _MapScreenState extends State<MapScreen> {
               child: Icon(_follow ? Icons.navigation : Icons.navigation_outlined),
             ),
             const SizedBox(height: 8),
+            ],
             // Frame me + everyone currently sharing.
             if (_contacts.isNotEmpty)
               FloatingActionButton.small(
                 heroTag: 'fit',
-                tooltip: 'Fit everyone',
+                tooltip: 'Show everyone',
                 onPressed: _fitEveryone,
                 child: const Icon(Icons.zoom_out_map),
               ),
-            if (_contacts.isNotEmpty) const SizedBox(height: 8),
+            if (_contacts.isNotEmpty && _me != null) const SizedBox(height: 8),
+            if (_me != null)
             FloatingActionButton(
               heroTag: 'centre',
               tooltip: 'Centre on me',
@@ -726,13 +783,19 @@ class _MapScreenState extends State<MapScreen> {
       contacts: [for (final c in _contacts.values) LatLng(c.lat, c.lng)],
     );
     if (targets.isEmpty) return;
+    setState(() => _follow = false); // following would pull straight back to me
+    // Keep everyone clear of whatever covers the map's bottom edge (Map
+    // first's panel) and of the people strip.
+    final bottom =
+        widget.bottomInset + (_showStrip ? _stripHeight + 16 : 0) + 64;
     if (targets.length == 1) {
-      _map.move(targets.first, 15);
+      _map.move(targets.first, 15,
+          offset: Offset(0, -(bottom - 64) / 2));
       return;
     }
     _map.fitCamera(CameraFit.coordinates(
       coordinates: targets,
-      padding: const EdgeInsets.all(64),
+      padding: EdgeInsets.fromLTRB(64, 64, 64, bottom),
       maxZoom: 16,
     ));
   }
