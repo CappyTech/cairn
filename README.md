@@ -14,7 +14,7 @@ By [CappyLabs](https://cairn.cappylabs.uk).
 [![Platform: Android](https://img.shields.io/badge/platform-Android-1F2A2E)](#how-it-works)
 [![Built with Flutter](https://img.shields.io/badge/built%20with-Flutter-02569B?logo=flutter)](https://flutter.dev)
 
-[Website](https://cairn.cappylabs.uk) · [Support](https://cairn.cappylabs.uk/support) · [Security](https://cairn.cappylabs.uk/security) · [Privacy](https://cairn.cappylabs.uk/privacy)
+[Website](https://cairn.cappylabs.uk) · [Beta](https://cairn.cappylabs.uk/beta) · [Support](https://cairn.cappylabs.uk/support) · [Security](https://cairn.cappylabs.uk/security) · [Privacy](https://cairn.cappylabs.uk/privacy)
 
 <br>
 
@@ -32,7 +32,8 @@ see theirs on a map. Your location — and even your display name — are
 **end-to-end encrypted**, so the server relays them but **cannot read them**.
 
 > Coming soon to Android and iOS. Cairn is pre-release; Android builds go to
-> Google Play's internal track.
+> Google Play's internal track. Want to try it?
+> [Sign up to test](https://cairn.cappylabs.uk/beta).
 
 ## Why Cairn
 
