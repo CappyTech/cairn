@@ -1,7 +1,7 @@
 name: release
 
 # - push to main         -> build web, push server image to GHCR, deploy to edge
-# - push a tag  v1.2.3    -> also build a signed .aab and upload to Google Play
+# - push a tag  v1.2.3    -> also build a signed .aab and upload to Google Play (alpha)
 on:
   push:
     branches: [main]
@@ -123,13 +123,13 @@ jobs:
           name: cairn-aab-${{ env.APP_VERSION }}
           path: build/app/outputs/bundle/release/app-release.aab
 
-      - name: Upload to Google Play (internal track)
+      - name: Upload to Google Play (closed testing, alpha)
         uses: r0adkll/upload-google-play@v1
         with:
           serviceAccountJsonPlainText: ${{ secrets.PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: uk.cappylabs.cairn
           releaseFiles: build/app/outputs/bundle/release/app-release.aab
-          tracks: internal
+          tracks: alpha                # closed testing; testers join via the Google Group
           # Release notes shipped with each build — edit before tagging.
           whatsNewDirectory: distribution/whatsnew
 

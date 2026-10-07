@@ -32,7 +32,7 @@ see theirs on a map. Your location — and even your display name — are
 **end-to-end encrypted**, so the server relays them but **cannot read them**.
 
 > Coming soon to Android and iOS. Cairn is pre-release; Android builds go to
-> Google Play's internal track. Want to try it?
+> Google Play's closed testing track. Want to try it?
 > [Sign up to test](https://cairn.cappylabs.uk/beta).
 
 ## Why Cairn
@@ -126,7 +126,7 @@ GitHub Actions:
 
 - **`ci.yml`** — every pull request and non-`main` branch: `flutter analyze` and the test suite.
 - **`release.yml`, push to `main`** → build web → push `ghcr.io/cappytech/cairn-server` → deploy to the edge over SSH.
-- **`release.yml`, push a tag `vX.Y.Z`** → build a signed `.aab` (version from the tag), attach it as an artifact, and upload to Google Play (internal track) with release notes from `distribution/whatsnew/`.
+- **`release.yml`, push a tag `vX.Y.Z`** → build a signed `.aab` (version from the tag), attach it as an artifact, and upload to Google Play (closed testing, `alpha` track) with release notes from `distribution/whatsnew/`.
 
 ## Privacy and security
 

@@ -23,7 +23,7 @@ This is a direction, not a contract; issues and PRs are where specifics live.
 | **Background** | Android foreground service, publishes every 2 min. |
 | **Recovery** | 24-word BIP39 phrase encodes the seed; restore rebuilds the same account. |
 | **Delete** | In-app account delete cascades to contacts, shares, and pair requests. |
-| **CI/CD** | `release.yml`: push to `main` → build web + server image → deploy over SSH; tag `vX.Y.Z` → signed `.aab` to Play internal track. |
+| **CI/CD** | `release.yml`: push to `main` → build web + server image → deploy over SSH; tag `vX.Y.Z` → signed `.aab` to Play closed testing (`alpha`). |
 
 ### Known limits, stated plainly
 - **iOS is unbuilt**, and the background isolate is Android-only — `onIosBackground` is effectively a no-op, so there is no real iOS background sharing yet.
